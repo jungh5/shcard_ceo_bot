@@ -2,7 +2,6 @@ streamlit
 openai
 beautifulsoup4
 requests
-hashlib
 sounddevice
 soundfile
-langchain-community
+langchain
