@@ -5,8 +5,6 @@ import time
 from pathlib import Path
 import io
 import requests
-import sounddevice as sd
-import soundfile as sf
 import threading
 from typing import List, Dict
 import json
@@ -305,7 +303,7 @@ class StreamlitNewsSearchSystem:
             return None
     
     def speak_result(self, text: str) -> None:
-        """결과 음성 출력"""
+        """Streamlit을 사용하여 결과 음성 출력"""
         try:
             # [문동권 사장님 말씀] 섹션만 추출
             if "[문동권 사장님 말씀]" in text:
@@ -317,15 +315,15 @@ class StreamlitNewsSearchSystem:
             audio_path = self.generate_tts_with_elevenlabs(tts_content, self.xi_api_key, self.voice_id)
 
             if audio_path and Path(audio_path).exists():
-                # 파일 읽어서 Streamlit에 전달
+                # Streamlit을 활용하여 오디오 재생
                 with open(audio_path, "rb") as audio_file:
                     audio_bytes = audio_file.read()
-                    
                     st.audio(audio_bytes, format="audio/mp3")
             else:
                 st.error("음성 파일을 생성하지 못했습니다.")
         except Exception as e:
             st.error(f"TTS 처리 중 오류 발생: {str(e)}")
+
 
 # 페이지 기본 설정
 st.set_page_config(
