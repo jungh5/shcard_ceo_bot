@@ -1,0 +1,8 @@
+# .gitignore
+*.pyc
+__pycache__
+.env
+.streamlit/secrets.toml
+cache/
+output*.mp3
+*.mp3
