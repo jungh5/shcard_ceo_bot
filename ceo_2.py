@@ -16,7 +16,7 @@ from openai import OpenAI
 import os
 
 # Streamlit 앱 설정
-st.set_page_config(page_title="신한카드 2025 신입사원 연수", page_icon='page_icon.png', layout="wide")
+st.set_page_config(page_title="신한카드 2025 신입사원 연수", page_icon='assets/page_icon.png', layout="wide")
 
 # API 키 기본값 설정
 llm_api_key = st.secrets["llm_api_key"]
@@ -579,8 +579,8 @@ def initialize_session_state():
         )
         st.session_state.initialized = True
 # 캐릭터 이미지 경로
-user_img = "user_character.png"  # 사용자 캐릭터 이미지 파일 경로
-bot_img = "bot_character.png"  # 챗봇 캐릭터 이미지 파일 경로
+user_img = "assets/user_character.png"  # 사용자 캐릭터 이미지 파일 경로
+bot_img = "assets/bot_character.png"  # 챗봇 캐릭터 이미지 파일 경로
 
 # 메시지를 이미지와 함께 출력하는 함수
 def send_message_with_image(message, role, image_path, save=True):
