@@ -13,10 +13,10 @@ from bs4 import BeautifulSoup
 import re
 import itertools
 from openai import OpenAI
+import os
 
 # Streamlit 앱 설정
 st.set_page_config(page_title="신한카드 2025 신입사원 연수", page_icon='page_icon.png', layout="wide")
-
 
 # API 키 기본값 설정
 llm_api_key = st.secrets["llm_api_key"]
@@ -24,7 +24,6 @@ naver_client_id = st.secrets["naver_client_id"]
 naver_client_secret = st.secrets["naver_client_secret"]
 xi_api_key = st.secrets["xi_api_key"]
 voice_id = st.secrets["voice_id"]
-
 
 # 배경 이미지 설정
 st.markdown(
@@ -99,14 +98,14 @@ class StreamlitNewsSearchSystem:
         """LLM을 사용하여 검색 키워드 추출"""
         try:
             progress_bar.progress(10)
-            st.write("키워드 추출 중...")
+            st.write("정보를 찾고 있습니다... 잠시만 기다려주세요")
             
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {
                         "role": "system",
-                        "content": "입력된 질문에서 핵심 검색 키워드만 추출해주세요. 쉼표로 구분된 형태로 반환해주세요."
+                        "content": "당신은 신한카드 답변 관련 봇입니다. 회사 관련 문의나 질문이 들어왔을 때, 입력된 질문에서 핵심 검색 키워드만 추출해주세요. 쉼표로 구분된 형태로 반환해주세요."
                     },
                     {
                         "role": "user",
@@ -122,7 +121,6 @@ class StreamlitNewsSearchSystem:
                 keywords.insert(0, '문동권')
             
             progress_bar.progress(20)
-            st.write(f"추출된 키워드: {', '.join(keywords)}")
             return keywords
             
         except Exception as e:
@@ -209,9 +207,6 @@ class StreamlitNewsSearchSystem:
             return filtered_items
             
         except Exception as e:
-            if '429' in str(e):
-                # API 호출 한도 초과 시 간단한 메시지
-                st.info("검색 중... 잠시만 기다려주세요.")
             return []
 
     def search_with_progressive_keywords(self, keywords: List[str], progress_bar, display: int = 5) -> List[Dict]:
@@ -244,60 +239,64 @@ class StreamlitNewsSearchSystem:
             return []
 
     def analyze_news_content(self, news_items: List[Dict], original_query: str, progress_bar) -> str:
-        """뉴스 내용 분석"""
+        """뉴스 내용 분석 개선 버전"""
         try:
             st.write("뉴스 내용 분석 중...")
             progress_bar.progress(60)
             
-            news_texts = [
-                f"제목: {item['title']}\n"
-                f"날짜: {item['pubDate']}\n"
-                f"전체 내용: {item['full_content']}\n"
-                f"출처: {item['link']}"
-                for item in news_items
-            ]
-            combined_text = "\n\n---\n\n".join(news_texts)
+            # 뉴스 메타데이터 추출 및 정리
+            news_metadata = []
+            news_contents = []
             
-            prompt = f"""다음은 '{original_query}'에 관한 신한카드 관련 뉴스 기사들입니다:
-
-            {combined_text}
+            for item in news_items:
+                # 메타데이터와 콘텐츠 분리
+                metadata = {
+                    "title": item['title'],
+                    "date": item['pubDate'],
+                    "url": item['link']
+                }
+                news_metadata.append(metadata)
+                
+                # 전체 콘텐츠는 별도로 저장
+                news_contents.append(item['full_content'])
             
-            [문동권 사장님 말씀]
-            (기사 내용을 바탕으로 30초 분량의 직접 발화 답변 작성
-            - 실제 발언이 있다면 그대로 인용
-            - 실제 발언이 없다면 기사 내용을 바탕으로 1인칭 시점에서 직접 설명
-            - 신한카드의 주요 정책이나 방향성이 드러나도록 구성
+            # 프롬프트 컨텍스트 강화
+            system_prompt = """당신은 신한카드의 CEO와 신입사원의 소통을 돕는 챗봇입니다.
+            주어진 뉴스 기사들을 분석하여 다음을 수행하세요:
+            1. 사용자의 원본 질문에 직접적으로 관련된 내용을 우선적으로 찾습니다.
+            2. 문동권 사장님의 실제 발언이 있다면 그대로 인용합니다.
+            3. 실제 발언이 없다면 기사 내용을 바탕으로 일관된 메시지를 구성합니다.
+            4. 신한카드의 전략과 방향성을 고려하여 답변합니다."""
 
-            [참고 기사]
-            - 제목: (기사 제목)
-            - 날짜: (기사 날짜)
-            - URL: (기사 링크)
-            - 관련 내용: (핵심 내용)
+            user_prompt = f"""원본 질문: {original_query}
 
-            [신입사원 가이드]
-            문동권 사장님의 경영 철학과 신한카드의 방향성을 고려한 분석입니다.
-            (앞선 내용을 바탕으로 신입사원들이 참고할 수 있는 가이드라인 제시)
+    뉴스 기사 내용:
+    {json.dumps(news_contents, ensure_ascii=False, indent=2)}
 
-            주의사항: 
-            1. 각 섹션은 명확히 구분되어야 합니다.
-            2. 실제 발언처럼 자연스러운 어투를 사용합니다.
-            3. 각 섹션의 형식을 정확히 지켜주세요.
-            4. 섹션들이 서로 섞이지 않도록 해주세요."""
-            
-            st.write("GPT 분석 요청 중...")
+    기사 메타데이터:
+    {json.dumps(news_metadata, ensure_ascii=False, indent=2)}
+
+    다음 형식으로 응답해주세요:
+
+    [문동권 사장님 말씀]
+    (질문과 직접 관련된 30초 분량의 답변)
+
+    [참고 기사]
+    - 제목: (관련성 높은 순서대로)
+    - 날짜: (기사 날짜)
+    - URL: (기사 링크)
+    - 관련 내용: (질문과 관련된 핵심 내용)
+
+    [신입사원 가이드]
+    (앞선 내용을 바탕으로 신입사원들이 참고할 수 있는 구체적인 가이드라인)"""
+
             progress_bar.progress(70)
             
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {
-                        "role": "system",
-                        "content": "신한카드 문동권 사장님의 발언과 관련 기사를 분석하여, 발언이 있으면 직접 인용하고 없으면 기사 내용을 바탕으로 관련 맥락을 파악하여 답변을 구성하는 assistant입니다."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.2
             )
@@ -401,15 +400,6 @@ def send_message(message, role, save=True):
     if save:
         save_message(message, role)
 
-# 이전 채팅 기록 표시
-def paint_history():
-    if "messages" in st.session_state:
-        for message in st.session_state["messages"]:
-            send_message(
-                message["message"],
-                message["role"],
-                save=False,
-            )
 
 def main(query):
     try:
@@ -426,8 +416,22 @@ def main(query):
         )
         
         if not news_items:
-            st.warning("해당 주제와 관련된 신한카드 기사를 찾을 수 없습니다.")
-            return 
+            try:
+                # 대체 응답 생성
+                alt_response = st.session_state.search_system.client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": "당신은 신한카드의 CEO 문동권 사장입니다. 질문과 관련된 주제에 대해 일반적인 답변을 제공합니다."},
+                        {"role": "user", "content": query}
+                    ],
+                    temperature=0.7
+                ).choices[0].message.content
+
+                st.markdown(f"#### 💬 신한카드 관련 정보가 없어 AI 대체 답변\n{alt_response}")
+
+            except Exception as e:
+                st.error(f"대체 답변 생성 중 오류 발생: {str(e)}")
+            return  # 기사가 없으므로 이후 로직은 실행하지 않음
         
         # 뉴스 분석
         result = st.session_state.search_system.analyze_news_content(
@@ -514,20 +518,7 @@ def main(query):
                         {speech_part}
                     </div>
                     """, unsafe_allow_html=True)
-                    
-                    # # 음성 버튼과 헤더를 여기에 한 번만 표시
-                    # st.markdown("#### 🔊 음성으로 듣기")
-                    # play_requested = st.button("재생", key="play_audio")
-                    
-                    
-                    # # 음성 재생 컨트롤
-                    # play_requested = False
-                    # col1, col2 = st.columns([1, 4])
-                    # with col1:
-                    #     if st.button("🔊 음성으로 듣기", key="play_audio"):
-                    #         play_requested = True
-                    
-                    # 음성으로 듣기 텍스트와 이모지 표시
+        
                     st.markdown("#### 🔊 AI문동권 사장님 음성으로 듣기")
                             
                     # 음성 재생 처리
@@ -573,47 +564,65 @@ def main(query):
         if progress_bar is not None:
             progress_bar.empty()
 
+def initialize_session_state():
+    if 'initialized' not in st.session_state:
+        st.session_state.tts_enabled = True
+        st.session_state.audio_played = False
+        st.session_state.messages = []
+        st.session_state.search_history = []
+        st.session_state.search_system = StreamlitNewsSearchSystem(
+            naver_client_id=naver_client_id,
+            naver_client_secret=naver_client_secret,
+            llm_api_key=llm_api_key,
+            xi_api_key=xi_api_key,
+            voice_id=voice_id
+        )
+        st.session_state.initialized = True
+# 캐릭터 이미지 경로
+user_img = "user_character.png"  # 사용자 캐릭터 이미지 파일 경로
+bot_img = "bot_character.png"  # 챗봇 캐릭터 이미지 파일 경로
 
-paint_history()
+# 메시지를 이미지와 함께 출력하는 함수
+def send_message_with_image(message, role, image_path, save=True):
+    """이미지를 포함하여 메시지를 표시"""
+    message_html = f"""
+    <div style="display: flex; align-items: flex-start; margin-bottom: 10px;">
+        <img src="{image_path}" alt="{role}" style="width: 50px; height: 50px; margin-right: 10px; border-radius: 50%;">
+        <div style="background-color: #f1f1f1; padding: 10px; border-radius: 10px; max-width: 80%;">
+            {message}
+        </div>
+    </div>
+    """
+    st.markdown(message_html, unsafe_allow_html=True)
+    if save:
+        save_message(message, role)
+
+# 메시지 기록 표시 함수
+def paint_history_with_images():
+    """세션 메시지를 이미지와 함께 출력"""
+    if "messages" in st.session_state:
+        for message in st.session_state["messages"]:
+            image_path = user_img if message["role"] == "human" else bot_img
+            send_message_with_image(
+                message["message"],
+                message["role"],
+                image_path,
+                save=False
+            )
+            
+initialize_session_state()
+
+# 이전 메시지 기록 출력
+paint_history_with_images()
+
 
 query = st.chat_input("궁금한 사항을 자유롭게 물어보세요")
 if query:
-    send_message(query, "human")
+    send_message(query, "human", user_img)
     # 프로그레스 바 생성
     progress_bar = st.progress(0)
-    
-    # 검색 시스템 자동 초기화
-    st.session_state.search_system = StreamlitNewsSearchSystem(
-        naver_client_id=naver_client_id,
-        naver_client_secret=naver_client_secret,
-        llm_api_key=llm_api_key,
-        xi_api_key=xi_api_key,
-        voice_id=voice_id
-    )
-    
     with st.chat_message("ai"):
         main(query)
-
-# 세션 상태 초기화
-if 'search_system' not in st.session_state:
-    # 안전하게 API 키를 가져오기
-    llm_api_key = st.secrets["llm_api_key"]
-    naver_client_id = st.secrets["naver_client_id"]
-    naver_client_secret = st.secrets["naver_client_secret"]
-    xi_api_key = st.secrets["xi_api_key"]
-    voice_id = st.secrets["voice_id"]
-    
-    # 검색 시스템 자동 초기화
-    st.session_state.search_system = StreamlitNewsSearchSystem(
-        naver_client_id=naver_client_id,
-        naver_client_secret=naver_client_secret,
-        llm_api_key=llm_api_key,
-        xi_api_key=xi_api_key,
-        voice_id=voice_id
-    )
-
-if 'search_history' not in st.session_state:
-    st.session_state.search_history = []
 
 # 세션 상태 초기화 후에 사이드바 추가
 with st.sidebar:
