@@ -14,12 +14,77 @@ import re
 import itertools
 from openai import OpenAI
 
+# Streamlit 앱 설정
+st.set_page_config(page_title="신한카드 2025 신입사원 연수", page_icon='page_icon.png', layout="wide")
+
+
 # API 키 기본값 설정
 llm_api_key = st.secrets["llm_api_key"]
 naver_client_id = st.secrets["naver_client_id"]
 naver_client_secret = st.secrets["naver_client_secret"]
 xi_api_key = st.secrets["xi_api_key"]
 voice_id = st.secrets["voice_id"]
+
+
+# 배경 이미지 설정
+st.markdown(
+    """
+    <style>
+    body {
+        background-image: url('bg.png');
+        background-size: cover;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# CSS to add a background image to the sidebar
+sidebar_background = """
+<style>
+    [data-testid="stSidebar"] {
+        background-image: "bg.png';
+        background-size: cover;
+    }
+</style>
+"""
+
+# 커스텀 CSS 추가
+st.markdown("""
+    <style>
+    @font-face {
+        font-family: 'MaruBuBareun_hipiriBold';
+         src: url('https://fastly.jsdelivr.net/gh/projectnoonnu/naverfont_01@1.0/Bareun_hipi.woff') format('woff');
+        font-weight: bold;
+        font-style: normal;
+    }
+    .custom-title {
+        font-family: 'MaruBuBareun_hipiriBold', sans-serif;
+        font-size: 3em; /* 원하는 크기로 조정 */
+        font-weight: bold;
+    }
+    .custom-title1 {
+        font-family: 'MaruBuBareun_hipiriBold', sans-serif;
+        font-size: 16px; /* 원하는 크기로 조정 */
+        font-weight: bold
+        font-style: normal;
+    }
+    fixed-title {
+        position: fixed;
+        top: 5;
+        width: 100%;
+        background-color: white;
+        z-index: 9999;
+        padding: 8px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# 페이지 제목
+st.markdown('<h1 class="custom-title"> 신한카드 2025  신입사원 - CEO 커뮤니케이션  </h1>', unsafe_allow_html=True)
+st.markdown('<h3 class="custom-title1"> 신입사원들에게 궁금한 사항을 자유롭게 물어보세요 🙋‍♀️🙋‍♂️ </h3>', unsafe_allow_html=True)
     
 class StreamlitNewsSearchSystem:
     def __init__(self, naver_client_id: str, naver_client_secret: str, llm_api_key: str, xi_api_key: str, voice_id: str):
@@ -325,13 +390,6 @@ class StreamlitNewsSearchSystem:
             st.error(f"TTS 처리 중 오류 발생: {str(e)}")
 
 
-# 페이지 기본 설정
-st.set_page_config(
-    page_title="신한카드ceo 뉴스 검색 시스템",
-    page_icon="🔍",
-    layout="wide"
-)
-
 def save_message(message, role):
     if "messages" not in st.session_state:
         st.session_state["messages"] = []
@@ -518,7 +576,7 @@ def main(query):
 
 paint_history()
 
-query = st.chat_input("Ask anything...")
+query = st.chat_input("궁금한 사항을 자유롭게 물어보세요")
 if query:
     send_message(query, "human")
     # 프로그레스 바 생성
@@ -557,43 +615,17 @@ if 'search_system' not in st.session_state:
 if 'search_history' not in st.session_state:
     st.session_state.search_history = []
 
-
-with st.sidebar:
-        
-    # TTS 설정
-    with st.expander("TTS 설정", expanded=False):
-        st.session_state.tts_enabled = st.checkbox(
-            "음성 출력 활성화",
-            value=True,
-            help="검색 결과를 음성으로 들으실 수 있습니다"
-        )
-        st.session_state.tts_speed = st.slider(
-            "음성 속도",
-            min_value=0.5,
-            max_value=2.0,
-            value=1.3,
-            step=0.1,
-            help="음성 출력 속도를 조절합니다"
-        )
-    
 # 세션 상태 초기화 후에 사이드바 추가
 with st.sidebar:
     # 사용 가이드
     st.markdown("### 🎯 사용 가이드")
     st.markdown("""
-    1. 검색하고 싶은 내용을 입력하세요
+    1. 회사에 문의하고 싶은 내용을 입력하세요
     2. 검색 버튼을 클릭하세요
     3. 분석 결과가 표시되며 음성으로도 들을 수 있습니다
     """)
     
     st.markdown("---")
-    
-    # 시스템 상태 표시
-    st.markdown("### 🔄 시스템 상태")
-    if st.session_state.search_system:
-        st.success("시스템이 정상 작동 중입니다")
-    else:
-        st.warning("시스템이 초기화되지 않았습니다")
     
     # 검색 기록
     if st.session_state.search_history:
