@@ -14,9 +14,11 @@ import re
 import itertools
 from openai import OpenAI
 import os
+import base64
 
 # Streamlit 앱 설정
 st.set_page_config(page_title="신한카드 2025 신입사원 연수", page_icon='assets/page_icon.png', layout="wide")
+
 
 # API 키 기본값 설정
 llm_api_key = st.secrets["llm_api_key"]
@@ -30,7 +32,7 @@ st.markdown(
     """
     <style>
     body {
-        background-image: url('bg.png');
+        background-image: url('bg.png');f
         background-size: cover;
         background-repeat: no-repeat;
         background-attachment: fixed;
@@ -83,7 +85,7 @@ st.markdown("""
 
 # 페이지 제목
 st.markdown('<h1 class="custom-title"> 신한카드 2025  신입사원 - CEO 커뮤니케이션  </h1>', unsafe_allow_html=True)
-st.markdown('<h3 class="custom-title1"> 신입사원들에게 궁금한 사항을 자유롭게 물어보세요 🙋‍♀️🙋‍♂️ </h3>', unsafe_allow_html=True)
+st.markdown('<h3 class="custom-title1"> 신입사원들은 궁금한 사항을 자유롭게 물어보세요 🙋‍♀️🙋‍♂️ </h3>', unsafe_allow_html=True)
     
 class StreamlitNewsSearchSystem:
     def __init__(self, naver_client_id: str, naver_client_secret: str, llm_api_key: str, xi_api_key: str, voice_id: str):
@@ -394,11 +396,47 @@ def save_message(message, role):
         st.session_state["messages"] = []
     st.session_state["messages"].append({"message": message, "role": role})
 
+# 현재 스크립트의 디렉토리를 기준으로 assets 폴더 경로 설정
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+ASSETS_DIR = os.path.join(SCRIPT_DIR, 'assets')
+
+def get_avatar_path(role: str) -> str:
+    """이미지 파일의 절대 경로를 반환"""
+    image_path = os.path.join(ASSETS_DIR, f'{role}_character.png')
+    if os.path.exists(image_path):
+        return image_path
+    print(f"Warning: Image not found at {image_path}")  # 디버깅용
+    return None
+
 def send_message(message, role, save=True):
-    with st.chat_message(role):
-        st.markdown(message, unsafe_allow_html=True)
+    """메시지를 채팅창에 표시"""
+    avatar_path = get_avatar_path('human' if role == 'human' else 'bot')
+    try:
+        with st.chat_message(role, avatar=avatar_path):
+            st.markdown(message, unsafe_allow_html=True)
+    except Exception as e:
+        print(f"Error displaying message with avatar: {e}")
+        with st.chat_message(role):
+            st.markdown(message, unsafe_allow_html=True)
     if save:
         save_message(message, role)
+
+def get_image_as_base64(image_path):
+    """이미지를 Base64 문자열로 변환"""
+    try:
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode("utf-8")
+    except Exception as e:
+        st.error(f"이미지를 불러오는 중 오류가 발생했습니다: {e}")
+        return ""
+        
+
+# 디버깅을 위한 정보 출력
+print(f"Script directory: {SCRIPT_DIR}")
+print(f"Assets directory: {ASSETS_DIR}")
+for role in ['human', 'bot']:
+    path = get_avatar_path(role)
+    print(f"{role} avatar path: {path}")
 
 
 def main(query):
@@ -511,17 +549,38 @@ def main(query):
                     </div>
                     """, unsafe_allow_html=True)
                 
+                bot_image_path = "assets/bot_character.png"
+
+                # 결과 컨테이너 부분에서
                 if speech_part:
-                    st.markdown("#### 💬 AI문동권 사장님 말씀")
-                    st.markdown(f"""
-                    <div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px;'>
-                        {speech_part}
-                    </div>
-                    """, unsafe_allow_html=True)
-        
-                    st.markdown("#### 🔊 AI문동권 사장님 음성으로 듣기")
-                            
-                    # 음성 재생 처리
+                    # 절대 경로로 이미지 경로 설정
+                    bot_image_path = os.path.join(ASSETS_DIR, 'bot_character.png')
+                    
+                    if os.path.exists(bot_image_path):
+                        # AI문동권 사장님 말씀
+                        st.markdown(f"""
+                        <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                            <img src="data:image/png;base64,{get_image_as_base64(bot_image_path)}" 
+                                alt="Bot Icon" 
+                                style="width: 30px; height: 30px; margin-right: 10px; border-radius: 50%;">
+                            <h3 style="margin: 0; display: inline;">AI문동권 사장님 말씀</h3>
+                        </div>
+                        <div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px;">
+                            {speech_part}
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # 음성 듣기 섹션
+                        st.markdown(f"""
+                        <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                            <img src="data:image/png;base64,{get_image_as_base64(bot_image_path)}" 
+                                alt="Bot Icon" 
+                                style="width: 30px; height: 30px; margin-right: 10px; border-radius: 50%;">
+                            <h3 style="margin: 0; display: inline;">AI문동권 사장님 음성으로 듣기</h3>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                     # 음성 재생 로직 유지
                     if st.session_state.tts_enabled and 'audio_played' not in st.session_state:
                         st.session_state.search_system.speak_result(result)
                         st.session_state.audio_played = True
@@ -579,8 +638,11 @@ def initialize_session_state():
         )
         st.session_state.initialized = True
 # 캐릭터 이미지 경로
-user_img = "assets/user_character.png"  # 사용자 캐릭터 이미지 파일 경로
+user_img = "assets/human_character.png"  # 사용자 캐릭터 이미지 파일 경로
 bot_img = "assets/bot_character.png"  # 챗봇 캐릭터 이미지 파일 경로
+
+if not Path(user_img).exists():
+    raise FileNotFoundError(f"File not found: {user_img}")
 
 # 메시지를 이미지와 함께 출력하는 함수
 def send_message_with_image(message, role, image_path, save=True):
@@ -598,32 +660,42 @@ def send_message_with_image(message, role, image_path, save=True):
         save_message(message, role)
 
 # 메시지 기록 표시 함수
-def paint_history_with_images():
-    """세션 메시지를 이미지와 함께 출력"""
+def paint_history():
+    """채팅 히스토리 표시"""
     if "messages" in st.session_state:
         for message in st.session_state["messages"]:
-            image_path = user_img if message["role"] == "human" else bot_img
-            send_message_with_image(
+            send_message(
                 message["message"],
                 message["role"],
-                image_path,
                 save=False
             )
-            
+
+def display_bot_section_with_image(title, bot_image_path, content):
+    """아이콘 대신 이미지를 사용하여 섹션을 표시"""
+    st.markdown(f"""
+    <div style="display: flex; align-items: center; margin-bottom: 10px;">
+        <img src="{bot_image_path}" alt="Bot Icon" style="width: 30px; height: 30px; margin-right: 10px; border-radius: 50%;">
+        <h3 style="margin: 0; display: inline;">{title}</h3>
+    </div>
+    <div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px;">
+        {content}
+    </div>
+    """, unsafe_allow_html=True)
+
+
+
+# 메인 코드
 initialize_session_state()
+paint_history()
 
-# 이전 메시지 기록 출력
-paint_history_with_images()
-
-
+# 채팅 입력
 query = st.chat_input("궁금한 사항을 자유롭게 물어보세요")
 if query:
-    send_message(query, "human", user_img)
-    # 프로그레스 바 생성
+    send_message(query, "human")
     progress_bar = st.progress(0)
-    with st.chat_message("ai"):
+    with st.chat_message("ai", avatar="assets/bot_character.png"):
         main(query)
-
+        
 # 세션 상태 초기화 후에 사이드바 추가
 with st.sidebar:
     # 사용 가이드
