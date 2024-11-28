@@ -16,8 +16,6 @@ from openai import OpenAI
 import os
 import base64
 
-# Streamlit 앱 설정
-st.set_page_config(page_title="신한카드 2025 신입사원 연수", page_icon='assets/page_icon.png', layout="wide")
 
 
 # API 키 기본값 설정
@@ -27,20 +25,6 @@ naver_client_secret = st.secrets["naver_client_secret"]
 xi_api_key = st.secrets["xi_api_key"]
 voice_id = st.secrets["voice_id"]
 
-# 배경 이미지 설정
-st.markdown(
-    """
-    <style>
-    body {
-        background-image: url('bg.png');f
-        background-size: cover;
-        background-repeat: no-repeat;
-        background-attachment: fixed;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
 
 # CSS to add a background image to the sidebar
 sidebar_background = """
@@ -233,7 +217,7 @@ class StreamlitNewsSearchSystem:
                             continue
                 
                 # 검색 결과가 없을 때
-                st.info("관련된 최신 기사를 찾을 수 없습니다. 다른 키워드로 검색해보세요.")
+                st.info("관련된 다른 키워드로 검색해보세요.")
                 return []
                 
         except Exception as e:
@@ -398,7 +382,7 @@ def save_message(message, role):
 
 # 현재 스크립트의 디렉토리를 기준으로 assets 폴더 경로 설정
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ASSETS_DIR = os.path.join(SCRIPT_DIR, 'assets')
+ASSETS_DIR = os.path.join(SCRIPT_DIR, 'static')
 
 def get_avatar_path(role: str) -> str:
     """이미지 파일의 절대 경로를 반환"""
@@ -429,17 +413,62 @@ def get_image_as_base64(image_path):
     except Exception as e:
         st.error(f"이미지를 불러오는 중 오류가 발생했습니다: {e}")
         return ""
-        
 
-# 디버깅을 위한 정보 출력
-print(f"Script directory: {SCRIPT_DIR}")
-print(f"Assets directory: {ASSETS_DIR}")
-for role in ['human', 'bot']:
-    path = get_avatar_path(role)
-    print(f"{role} avatar path: {path}")
+# 배경 이미지 추가
+bg_image_path = "static/bg.png"  # 배경 이미지 경로
+if Path(bg_image_path).exists():
+    bg_image_base64 = get_image_as_base64(bg_image_path)
+    st.markdown(
+        f"""
+        <style>
+        /* 전체 페이지 배경 */
+        html {{
+            background-image: url("data:image/png;base64,{bg_image_base64}");
+            background-size: cover;
+            background-attachment: fixed;
+            background-repeat: no-repeat;
+        }}
+
+        /* 메인 화면 (stApp) 배경 투명화 */
+        .stApp {{
+            background: rgba(255, 255, 255, 0); /* 투명화 */
+        }}
+
+        /* 사이드바 배경 투명화 */
+        [data-testid="stSidebar"] {{
+            background: rgba(255, 255, 255, 0); /* 투명화 */
+        }}
+
+        /* 텍스트 입력창 하단 영역 (stChatInput) */
+        [data-testid="stBottom"]{{
+            background-image: url("data:image/png;base64,{bg_image_base64}");
+            background-size: cover;
+            background-attachment: fixed;
+            background-repeat: no-repeat;
+        }}
+
+        /* 헤더와 푸터 배경 투명화 */
+        .stApp > header {{
+            background: rgba(255, 255, 255, 0); /* 투명화 */
+        }}
+        
+        /* 헤더와 푸터 배경 투명화 */
+        . {{
+            background: rgba(255, 255, 255, 0); /* 투명화 */
+        }}
+        
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+else:
+    st.warning("배경 이미지 파일이 존재하지 않습니다.")
+print(get_image_as_base64("static/bg.png"))
+
 
 
 def main(query):
+
     try:
         # 새로운 검색을 시작할 때 audio_played 상태 초기화
         if 'audio_played' in st.session_state:
@@ -459,13 +488,23 @@ def main(query):
                 alt_response = st.session_state.search_system.client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=[
-                        {"role": "system", "content": "당신은 신한카드의 CEO 문동권 사장입니다. 질문과 관련된 주제에 대해 일반적인 답변을 제공합니다."},
+                        {"role": "system", "content": "당신은 신한카드의 CEO 문동권 사장입니다. 질문과 관련된 주제에 대해 일반적인 답변을 제공합니다. 일반적인 문의를 할 경우에 신한카드 관련 문의나 질문을 해달라고 답변하거나 회사 관련해서 자세하게 문의해달라고 답해주세요."},
                         {"role": "user", "content": query}
                     ],
                     temperature=0.7
                 ).choices[0].message.content
 
-                st.markdown(f"#### 💬 신한카드 관련 정보가 없어 AI 대체 답변\n{alt_response}")
+                st.markdown(f"#### 💬 AI답변\n{alt_response}")
+                
+                # 메시지 저장
+                save_message(alt_response, "ai")
+
+                # 검색 기록에 추가
+                st.session_state.search_history.append({
+                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'query': query,
+                    'result': f"💬 AI답변: {alt_response}"
+                })
 
             except Exception as e:
                 st.error(f"대체 답변 생성 중 오류 발생: {str(e)}")
@@ -479,15 +518,7 @@ def main(query):
         if result:
             # 결과를 세션 상태에 저장
             st.session_state.current_result = result
-            
             st.markdown("### 📊 분석 결과")
-                        
-            # # TTS 컨트롤
-            # play_requested = False
-            # col1, col2 = st.columns([1, 4])
-            # with col1:
-            #     if st.button("🔊 음성으로 듣기", key="play_audio"):
-            #         play_requested = True
             
             # 섹션 표시
             def extract_section(text, start_marker, end_marker=None):
@@ -549,7 +580,7 @@ def main(query):
                     </div>
                     """, unsafe_allow_html=True)
                 
-                bot_image_path = "assets/bot_character.png"
+                bot_image_path = "static/bot_character.png"
 
                 # 결과 컨테이너 부분에서
                 if speech_part:
@@ -603,12 +634,6 @@ def main(query):
 {speech_part}
 </div>"""
             
-            # # 음성 재생 처리
-            # if st.session_state.tts_enabled:
-            #     if play_requested or 'audio_played' not in st.session_state:
-            #         st.session_state.search_system.speak_result(result)
-            #         st.session_state.audio_played = True
-            
             # 검색 기록 저장
             st.session_state.search_history.append({
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -638,8 +663,8 @@ def initialize_session_state():
         )
         st.session_state.initialized = True
 # 캐릭터 이미지 경로
-user_img = "assets/human_character.png"  # 사용자 캐릭터 이미지 파일 경로
-bot_img = "assets/bot_character.png"  # 챗봇 캐릭터 이미지 파일 경로
+user_img = "static/human_character.png"  # 사용자 캐릭터 이미지 파일 경로
+bot_img = "static/bot_character.png"  # 챗봇 캐릭터 이미지 파일 경로
 
 if not Path(user_img).exists():
     raise FileNotFoundError(f"File not found: {user_img}")
@@ -693,7 +718,7 @@ query = st.chat_input("궁금한 사항을 자유롭게 물어보세요")
 if query:
     send_message(query, "human")
     progress_bar = st.progress(0)
-    with st.chat_message("ai", avatar="assets/bot_character.png"):
+    with st.chat_message("ai", avatar="static/bot_character.png"):
         main(query)
         
 # 세션 상태 초기화 후에 사이드바 추가
