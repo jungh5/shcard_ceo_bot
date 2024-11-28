@@ -26,6 +26,11 @@ xi_api_key = st.secrets["xi_api_key"]
 voice_id = st.secrets["voice_id"]
 
 
+st.set_page_config(
+    initial_sidebar_state="collapsed",
+    
+)
+
 # 커스텀 CSS 추가
 st.markdown("""
     <style>
@@ -50,7 +55,6 @@ st.markdown("""
         position: fixed;
         top: 5;
         width: 100%;
-        background-color: white;
         z-index: 9999;
         padding: 8px;
     }
@@ -58,7 +62,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # 페이지 제목
-st.markdown('<h1 class="custom-title"> 신한카드 2025  신입사원 - CEO 커뮤니케이션  </h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="custom-title"> 신한카드 신입사원 - CEO 커뮤니케이션  </h1>', unsafe_allow_html=True)
 st.markdown('<h3 class="custom-title1"> 신입사원들은 궁금한 사항을 자유롭게 물어보세요 🙋‍♀️🙋‍♂️ </h3>', unsafe_allow_html=True)
     
 class StreamlitNewsSearchSystem:
@@ -419,42 +423,38 @@ if Path(bg_image_path).exists():
             background-repeat: no-repeat;
         }}
 
-        /* 메인 화면 (stApp) 배경 투명화 */
-        .stApp {{
-            background: rgba(255, 255, 255, 0); /* 투명화 */
+        /* 텍스트 입력창 하단 영역 (stChatInput) */
+        [data-testid="stApp"]{{
+            background-image: url("data:image/png;base64,{bg_image_base64}");
+            background-size: cover;
+    /       background: rgba(255, 255, 255, 0); /* 투명화 *
         }}
-
+        
         /* 사이드바 배경 투명화 */
         [data-testid="stSidebar"] {{
             background: rgba(255, 255, 255, 0); /* 투명화 */
         }}
-
-        /* 텍스트 입력창 하단 영역 (stChatInput) */
-        [data-testid="stBottom"]{{
-            background-image: url("data:image/png;base64,{bg_image_base64}");
-            background-size: cover;
-            background-attachment: fixed;
-            background-repeat: no-repeat;
-        }}
-
-        /* 헤더와 푸터 배경 투명화 */
-        .stApp > header {{
+        
+        /* 사이드바 배경 투명화 */
+        [data-testid="stHeader"] {{
             background: rgba(255, 255, 255, 0); /* 투명화 */
         }}
         
-        /* 헤더와 푸터 배경 투명화 */
-        . {{
+        /* 사이드바 배경 투명화 */
+        [data-testid="stBottom"] {{
             background: rgba(255, 255, 255, 0); /* 투명화 */
         }}
         
+        /* 사이드바 배경 투명화 */
+        [data-testid="stBottom"] > div {{
+            background: rgba(255, 255, 255, 0); /* 투명화 */
+        }}
         </style>
         """,
         unsafe_allow_html=True
     )
 else:
     st.warning("배경 이미지 파일이 존재하지 않습니다.")
-print(get_image_as_base64("static/bg.png"))
-
 
 
 def main(query):
@@ -556,11 +556,6 @@ def main(query):
                             formatted_lines.append(f"- {line}")
 
                     formatted_ref = '<br>'.join(formatted_lines)
-                    st.markdown(f"""
-                    <div style='background-color: #ffffff; padding: 20px; border-radius: 10px; border: 1px solid #e0e0e0;'>
-                        {formatted_ref}
-                    </div>
-                    """, unsafe_allow_html=True)
                 
                 if guide_part:
                     st.markdown("#### 🎯 신입사원 가이드")
@@ -692,7 +687,7 @@ def display_bot_section_with_image(title, bot_image_path, content):
         <img src="{bot_image_path}" alt="Bot Icon" style="width: 30px; height: 30px; margin-right: 10px; border-radius: 50%;">
         <h3 style="margin: 0; display: inline;">{title}</h3>
     </div>
-    <div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px;">
+    <div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px;ƒ">
         {content}
     </div>
     """, unsafe_allow_html=True)
@@ -710,6 +705,7 @@ if query:
     progress_bar = st.progress(0)
     with st.chat_message("ai", avatar="static/bot_character.png"):
         main(query)
+
 
         
 # 세션 상태 초기화 후에 사이드바 추가
