@@ -26,16 +26,6 @@ xi_api_key = st.secrets["xi_api_key"]
 voice_id = st.secrets["voice_id"]
 
 
-# CSS to add a background image to the sidebar
-sidebar_background = """
-<style>
-    [data-testid="stSidebar"] {
-        background-image: "bg.png';
-        background-size: cover;
-    }
-</style>
-"""
-
 # 커스텀 CSS 추가
 st.markdown("""
     <style>
@@ -720,6 +710,7 @@ if query:
     progress_bar = st.progress(0)
     with st.chat_message("ai", avatar="static/bot_character.png"):
         main(query)
+
         
 # 세션 상태 초기화 후에 사이드바 추가
 with st.sidebar:
