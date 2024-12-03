@@ -1,5 +1,9 @@
 streamlit
-openai
+plotly
+pandas
+openpyxl
+wordcloud
+matplotlib
 beautifulsoup4
 requests
-langchain
+openai
