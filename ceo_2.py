@@ -629,7 +629,6 @@ def analyze_text(text_data, response_data=None):
     
 
 def analyze_text_with_context(text_query: str, file_data: str, chat_history: list, search_system) -> dict:
-    """파일 데이터와 채팅 이력을 활용하여 텍스트 분석 또는 일반 답변 생성"""
     try:
         # 질문 유형 분석
         query_type = analyze_query_type(text_query, search_system.client)
@@ -639,19 +638,22 @@ def analyze_text_with_context(text_query: str, file_data: str, chat_history: lis
 
         # 질문에서 원하는 분석 종류 파악
         requested_analysis = determine_requested_analysis(text_query)
-        st.write("요청된 분석 종류:", requested_analysis)
+        # st.write("요청된 분석 종류:", requested_analysis)  # 디버그 출력 제거
 
         # LLM에게 요청할 분석 종류를 프롬프트에 포함
         analysis_instructions = ""
         if 'keyword_frequency' in requested_analysis:
             analysis_instructions += "1. 키워드 빈도수 분석을 수행하고, 결과를 'keyword_frequency' 키에 JSON 배열로 반환하세요.\n"
         if 'sentiment_analysis' in requested_analysis:
-            analysis_instructions += "2. 감성 분석을 수행하고, 결과를 'sentiment_analysis' 키에 JSON 객체로 반환하세요.\n"
+            analysis_instructions += "2. 감성 분석을 수행하고, 결과를 'sentiment_analysis' 키에 JSON 배열로 반환하세요.\n"
         if 'topic_distribution' in requested_analysis:
             analysis_instructions += "3. 주제 분포 분석을 수행하고, 결과를 'topic_distribution' 키에 JSON 배열로 반환하세요.\n"
 
         if not analysis_instructions:
             analysis_instructions = "사용자의 질문에 답변하세요."
+
+        # 결과를 반드시 JSON 형식으로만 반환하도록 지시
+        analysis_instructions += "\n결과를 반드시 JSON 형식으로만 반환하고, JSON 외의 텍스트는 포함하지 마세요."
 
         # 파일 데이터를 항상 프롬프트에 포함
         analysis_prompt = f"""
@@ -681,36 +683,19 @@ def analyze_text_with_context(text_query: str, file_data: str, chat_history: lis
 
         raw_response = response.choices[0].message.content
 
-        # 데이터 분석 결과가 포함된 경우 JSON 파싱 시도
-        if query_type == 'data_analysis':
-            # JSON 부분만 추출
-            import re
-            json_match = re.search(r'\{.*\}', raw_response, re.DOTALL)
-            if json_match:
-                json_content = json_match.group(0)
-                try:
-                    analysis_results = json.loads(json_content)
-                except json.JSONDecodeError as e:
-                    st.error(f"JSON 파싱 오류: {e}")
-                    analysis_results = None
-                return {
-                    "query_type": query_type,
-                    "answer": raw_response,
-                    "analysis": analysis_results
-                }
-            else:
-                # JSON이 없을 경우에도 'analysis' 키를 포함
-                return {
-                    "query_type": query_type,
-                    "answer": raw_response,
-                    "analysis": None  # 또는 빈 딕셔너리 {}
-                }
-        else:
-            # 일반 텍스트 응답 반환
+        # 응답 전체를 JSON으로 파싱 시도
+        try:
+            analysis_results = json.loads(raw_response)
+            # 분석 결과를 반환
             return {
                 "query_type": query_type,
-                "answer": raw_response
+                "answer": "",  # LLM 응답이 JSON 데이터만 있으므로, answer는 빈 문자열로 설정
+                "analysis": analysis_results
             }
+        except json.JSONDecodeError as e:
+            st.error("분석 결과를 처리하는 중 오류가 발생했습니다.")
+            print(f"JSON 파싱 오류: {e}")
+            return None
 
     except Exception as e:
         st.error(f"분석 중 오류가 발생했습니다: {str(e)}")
@@ -947,47 +932,69 @@ def display_combined_analysis(result):
     st.markdown(result.get("answer", ""))
 
     # 분석 결과가 있는 경우 차트 표시
-    if result.get("query_type") == "data_analysis" and "analysis" in result:
+    if result.get("query_type") == "data_analysis" and "analysis" in result and result["analysis"]:
         st.markdown("### 📊 분석 결과")
         analysis_results = result["analysis"]
 
         # 키워드 빈도수 차트
         if 'keyword_frequency' in analysis_results:
             st.markdown("#### 주요 키워드 분석")
-            keyword_df = pd.DataFrame(analysis_results['keyword_frequency'])
-            fig = px.bar(keyword_df, x="keyword", y="count", 
-                        title="키워드 빈도수",
-                        labels={"count": "출현 횟수", "keyword": "키워드"})
-            st.plotly_chart(fig, use_container_width=True)
+            keyword_data = analysis_results['keyword_frequency']
+            if isinstance(keyword_data, list) and len(keyword_data) > 0:
+                keyword_df = pd.DataFrame(keyword_data)
+                fig = px.bar(keyword_df, x="keyword", y="count", 
+                            title="키워드 빈도수",
+                            labels={"count": "출현 횟수", "keyword": "키워드"})
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("키워드 빈도수 데이터가 없습니다.")
         
         # 주제 분포 파이 차트
         if 'topic_distribution' in analysis_results:
             st.markdown("#### 주제 분포")
-            topic_df = pd.DataFrame(analysis_results['topic_distribution'])
-            fig = px.pie(topic_df, values="percentage", names="topic", 
-                        title="주제별 분포")
-            st.plotly_chart(fig, use_container_width=True)
+            topic_data = analysis_results['topic_distribution']
+            if isinstance(topic_data, list) and len(topic_data) > 0:
+                topic_df = pd.DataFrame(topic_data)
+                # 'percentage' 계산
+                if 'questions' in topic_df.columns:
+                    topic_df['question_count'] = topic_df['questions'].apply(len)
+                    total_questions = topic_df['question_count'].sum()
+                    topic_df['percentage'] = (topic_df['question_count'] / total_questions) * 100
+                else:
+                    st.error("주제 분포 데이터에 'questions' 정보가 없습니다.")
+                    return
+
+                fig = px.pie(topic_df, values="percentage", names="topic", 
+                            title="주제별 분포")
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("주제 분포 데이터가 없습니다.")
         
-        # 감성 분석 게이지
+        ## 감성 분석 게이지
         if 'sentiment_analysis' in analysis_results:
             st.markdown("#### 감성 분석")
-            sentiment = analysis_results['sentiment_analysis']
-            total_score = sum(sentiment.values())
-            positive_ratio = (sentiment["positive_score"] / total_score) * 100
-            
-            fig = go.Figure(go.Indicator(
-                mode="gauge+number",
-                value=positive_ratio,
-                title={'text': "긍정도 비율"},
-                gauge={
-                    'axis': {'range': [0, 100]},
-                    'steps': [
-                        {'range': [0, 50], 'color': "lightgray"},
-                        {'range': [50, 100], 'color': "lightblue"}
-                    ]
-                }
-            ))
-            st.plotly_chart(fig, use_container_width=True)
+            sentiment_data = analysis_results['sentiment_analysis']
+            if isinstance(sentiment_data, list) and len(sentiment_data) > 0:
+                # 각 감정의 개수 계산
+                sentiment_counts = pd.DataFrame(sentiment_data)['sentiment'].value_counts().to_dict()
+                total_count = sum(sentiment_counts.values())
+                positive_ratio = (sentiment_counts.get('긍정', 0) / total_count) * 100
+
+                fig = go.Figure(go.Indicator(
+                    mode="gauge+number",
+                    value=positive_ratio,
+                    title={'text': "긍정도 비율"},
+                    gauge={
+                        'axis': {'range': [0, 100]},
+                        'steps': [
+                            {'range': [0, 50], 'color': "lightgray"},
+                            {'range': [50, 100], 'color': "lightblue"}
+                        ]
+                    }
+                ))
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("감성 분석 데이터가 없습니다.")
         
         # 주요 인사이트
         if 'key_insights' in analysis_results:
@@ -1670,14 +1677,15 @@ def determine_requested_analysis(question: str) -> List[str]:
     analysis_types = []
     if any(word in question for word in ['키워드', '워드 클라우드', '단어', '빈도']):
         analysis_types.append('keyword_frequency')
-    if any(word in question for word in ['긍정', '부정', '감정', '감성']):
+    if any(word in question for word in ['긍정', '부정', '감정', '감성', '감정 분석', '감성 분석']):
         analysis_types.append('sentiment_analysis')
-    if any(word in question for word in ['카테고리', '주제', '토픽', '분류']):
+    if any(word in question for word in ['카테고리', '주제', '토픽', '분류', '질문의 카테고리']):
         analysis_types.append('topic_distribution')
     # 분석 종류를 명시적으로 요청하지 않은 경우 기본적으로 모두 포함
     if not analysis_types:
         analysis_types = ['keyword_frequency', 'sentiment_analysis', 'topic_distribution']
     return analysis_types
+
 
 
 def process_analysis_query(query):
