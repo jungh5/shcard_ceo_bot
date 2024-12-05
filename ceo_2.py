@@ -826,42 +826,37 @@ def display_analysis_results(analysis_results, requested_analysis=None):
     try:
         st.markdown("### 📊 분석 결과")
 
+        # 키워드 빈도수 분석
         if 'keyword_frequency' in requested_analysis and 'keyword_frequency' in analysis_results and analysis_results['keyword_frequency']:
             st.markdown("#### 주요 키워드 분석")
-            # 데이터 구조 검증 및 변환
             keyword_data = analysis_results['keyword_frequency']
             if isinstance(keyword_data, list) and len(keyword_data) > 0:
                 # 'frequency' 키를 'count' 키로 변경
                 for item in keyword_data:
                     if 'frequency' in item:
                         item['count'] = item.pop('frequency')
-                # 데이터프레임 생성
                 keyword_df = pd.DataFrame(keyword_data)
-                
                 # 차트 생성
                 try:
-                    fig_freq = px.bar(keyword_df, 
-                                    x='keyword', 
-                                    y='count',
-                                    title="주요 키워드 Top 10",
-                                    labels={'count': '출현 횟수', 'keyword': '키워드'})
+                    fig_freq = px.bar(keyword_df, x='keyword', y='count', title="주요 키워드 Top 10", labels={'count': '빈도수', 'keyword': '키워드'})
                     st.plotly_chart(fig_freq, use_container_width=True)
                 except Exception as e:
-                    st.error(f"키워드 빈도수 차트 생성 중 오류 발생: {str(e)}")
-                    st.write("키워드 데이터:", keyword_df)
+                    st.error("키워드 빈도수 차트를 생성하는 중 오류가 발생했습니다.")
+                    print(f"키워드 빈도수 차트 생성 중 오류 발생: {str(e)}")
+                    print("키워드 데이터:", keyword_df)
 
+        # 감성 분석
         if 'sentiment_analysis' in requested_analysis and 'sentiment_analysis' in analysis_results:
             st.markdown("#### 감성 분석")
             try:
                 sentiment = analysis_results['sentiment_analysis']
                 total_score = sum(sentiment.values())
                 if total_score > 0:
-                    normalized_score = (sentiment['positive_score'] / total_score) * 100
-                    
+                    positive_ratio = (sentiment.get('positive_score', 0) / total_score) * 100
                     fig_sentiment = go.Figure(go.Indicator(
                         mode="gauge+number",
-                        value=normalized_score,
-                        title={'text': "긍정도 지수"},
+                        value=positive_ratio,
+                        title={'text': "긍정도 비율"},
                         gauge={
                             'axis': {'range': [0, 100]},
                             'steps': [
@@ -871,34 +866,43 @@ def display_analysis_results(analysis_results, requested_analysis=None):
                         }
                     ))
                     st.plotly_chart(fig_sentiment, use_container_width=True)
+                else:
+                    st.error("감성 분석 결과의 총 점수가 0입니다.")
             except Exception as e:
-                st.error(f"감성 분석 차트 생성 중 오류: {str(e)}")
+                st.error("감성 분석 차트를 생성하는 중 오류가 발생했습니다.")
+                print(f"감성 분석 차트 생성 중 오류 발생: {str(e)}")
+                print("감성 분석 데이터:", sentiment)
 
+        # 주제 분포 분석
         if 'topic_distribution' in requested_analysis and 'topic_distribution' in analysis_results and analysis_results['topic_distribution']:
             st.markdown("#### 주제 분포")
             try:
                 topic_data = analysis_results['topic_distribution']
-                topic_df = pd.DataFrame(topic_data)
-
-                # 'count' 열이 있는지 확인하고 'percentage' 계산
-                if 'count' in topic_df.columns:
-                    total_count = topic_df['count'].sum()
-                    topic_df['percentage'] = (topic_df['count'] / total_count) * 100
+                if isinstance(topic_data, list) and len(topic_data) > 0:
+                    # 'frequency' 또는 'count' 키를 'count'로 통일
+                    for item in topic_data:
+                        if 'frequency' in item:
+                            item['count'] = item.pop('frequency')
+                    topic_df = pd.DataFrame(topic_data)
+                    # 'percentage' 계산
+                    if 'count' in topic_df.columns:
+                        total_count = topic_df['count'].sum()
+                        topic_df['percentage'] = (topic_df['count'] / total_count) * 100
+                    else:
+                        st.error("주제 분포 데이터에 'count' 값이 없습니다.")
+                        return
+                    # 차트 생성
+                    if not topic_df.empty and 'topic' in topic_df.columns and 'percentage' in topic_df.columns:
+                        fig_topic = px.pie(topic_df, values='percentage', names='topic', title="주제별 분포")
+                        st.plotly_chart(fig_topic, use_container_width=True)
+                    else:
+                        st.error("주제 분포 데이터에 필요한 열이 없습니다.")
                 else:
-                    st.error("주제 분포 데이터에 'count' 값이 없습니다.")
-                    return
-
-                if not topic_df.empty and 'topic' in topic_df.columns and 'percentage' in topic_df.columns:
-                    fig_topic = px.pie(topic_df, 
-                                     values='percentage', 
-                                     names='topic',
-                                     title="주제별 분포")
-                    st.plotly_chart(fig_topic, use_container_width=True)
-                else:
-                    st.error("주제 분포 데이터에 필요한 열이 없습니다.")
+                    st.error("주제 분포 데이터가 유효하지 않습니다.")
             except Exception as e:
-                st.error(f"주제 분포 차트 생성 중 오류 발생: {str(e)}")
-                st.write("주제 분포 데이터:", topic_df)
+                st.error("주제 분포 차트를 생성하는 중 오류가 발생했습니다.")
+                print(f"주제 분포 차트 생성 중 오류 발생: {str(e)}")
+                print("주제 분포 데이터:", topic_df)
 
         # 주요 인사이트 표시 (필요 시)
         if 'key_insights' in analysis_results:
@@ -906,12 +910,12 @@ def display_analysis_results(analysis_results, requested_analysis=None):
             insights = analysis_results['key_insights']
             if isinstance(insights, list):
                 for insight in insights:
-                    st.markdown(f"• {insight}")
+                    st.markdown(f"- {insight}")
 
     except Exception as e:
-        st.error(f"분석 결과 표시 중 오류 발생: {str(e)}")
-        st.write("분석 결과 데이터:", analysis_results)
-
+        st.error("분석 결과를 표시하는 중 오류가 발생했습니다.")
+        print(f"분석 결과 표시 중 오류 발생: {str(e)}")
+        print("분석 결과 데이터:", analysis_results)
 
 
 
@@ -1656,14 +1660,16 @@ def handle_analysis_mode():
 def determine_requested_analysis(question: str) -> List[str]:
     """사용자의 질문을 기반으로 원하는 분석 종류를 반환"""
     analysis_types = []
-    if '키워드' in question or '워드 클라우드' in question or '단어' in question or '빈도' in question:
+    if any(word in question for word in ['키워드', '워드 클라우드', '단어', '빈도']):
         analysis_types.append('keyword_frequency')
-    if '긍정' in question or '부정' in question or '감정' in question or '감성' in question:
+    if any(word in question for word in ['긍정', '부정', '감정', '감성']):
         analysis_types.append('sentiment_analysis')
-    if '카테고리' in question or '주제' in question or '토픽' in question or '빈도' in question:
+    if any(word in question for word in ['카테고리', '주제', '토픽', '분류']):
         analysis_types.append('topic_distribution')
+    # 분석 종류를 명시적으로 요청하지 않은 경우 기본적으로 모두 포함
+    if not analysis_types:
+        analysis_types = ['keyword_frequency', 'sentiment_analysis', 'topic_distribution']
     return analysis_types
-
 
 
 def process_analysis_query(query):
