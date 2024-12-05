@@ -850,6 +850,14 @@ def display_analysis_results(analysis_results, requested_analysis=None):
             st.markdown("#### 감성 분석")
             try:
                 sentiment = analysis_results['sentiment_analysis']
+                # 키 이름 변환
+                if 'positive' in sentiment:
+                    sentiment['positive_score'] = sentiment.pop('positive')
+                if 'negative' in sentiment:
+                    sentiment['negative_score'] = sentiment.pop('negative')
+                if 'neutral' in sentiment:
+                    sentiment['neutral_score'] = sentiment.pop('neutral')
+
                 total_score = sum(sentiment.values())
                 if total_score > 0:
                     positive_ratio = (sentiment.get('positive_score', 0) / total_score) * 100
@@ -870,7 +878,7 @@ def display_analysis_results(analysis_results, requested_analysis=None):
                     st.error("감성 분석 결과의 총 점수가 0입니다.")
             except Exception as e:
                 st.error("감성 분석 차트를 생성하는 중 오류가 발생했습니다.")
-                print(f"감성 분석 차트 생성 중 오류 발생: {str(e)}")
+                print(f"감성 분석 차트 생성 중 오류 발생: {e}")
                 print("감성 분석 데이터:", sentiment)
 
         # 주제 분포 분석
@@ -879,7 +887,7 @@ def display_analysis_results(analysis_results, requested_analysis=None):
             try:
                 topic_data = analysis_results['topic_distribution']
                 if isinstance(topic_data, list) and len(topic_data) > 0:
-                    # 'frequency' 또는 'count' 키를 'count'로 통일
+                    # 'count' 키가 없으면 'frequency' 키를 'count'로 변경
                     for item in topic_data:
                         if 'frequency' in item:
                             item['count'] = item.pop('frequency')
@@ -888,8 +896,8 @@ def display_analysis_results(analysis_results, requested_analysis=None):
                     if 'count' in topic_df.columns:
                         total_count = topic_df['count'].sum()
                         topic_df['percentage'] = (topic_df['count'] / total_count) * 100
-                    else:
-                        st.error("주제 분포 데이터에 'count' 값이 없습니다.")
+                    elif 'percentage' not in topic_df.columns:
+                        st.error("주제 분포 데이터에 'count' 또는 'percentage' 값이 없습니다.")
                         return
                     # 차트 생성
                     if not topic_df.empty and 'topic' in topic_df.columns and 'percentage' in topic_df.columns:
@@ -901,7 +909,7 @@ def display_analysis_results(analysis_results, requested_analysis=None):
                     st.error("주제 분포 데이터가 유효하지 않습니다.")
             except Exception as e:
                 st.error("주제 분포 차트를 생성하는 중 오류가 발생했습니다.")
-                print(f"주제 분포 차트 생성 중 오류 발생: {str(e)}")
+                print(f"주제 분포 차트 생성 중 오류 발생: {e}")
                 print("주제 분포 데이터:", topic_df)
 
         # 주요 인사이트 표시 (필요 시)
