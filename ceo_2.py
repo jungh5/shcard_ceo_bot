@@ -638,7 +638,6 @@ def analyze_text_with_context(text_query: str, file_data: str, chat_history: lis
 
         # 질문에서 원하는 분석 종류 파악
         requested_analysis = determine_requested_analysis(text_query)
-        # st.write("요청된 분석 종류:", requested_analysis)  # 디버그 출력 제거
 
         # LLM에게 요청할 분석 종류를 프롬프트에 포함
         analysis_instructions = ""
@@ -653,7 +652,7 @@ def analyze_text_with_context(text_query: str, file_data: str, chat_history: lis
             analysis_instructions = "사용자의 질문에 답변하세요."
 
         # 결과를 반드시 JSON 형식으로만 반환하도록 지시
-        analysis_instructions += "\n결과를 반드시 JSON 형식으로만 반환하고, JSON 외의 텍스트는 포함하지 마세요."
+        analysis_instructions += "\n\n**중요**: 결과는 반드시 JSON 형식으로만 반환하며, 그 외의 텍스트는 일절 포함하지 마세요."
 
         # 파일 데이터를 항상 프롬프트에 포함
         analysis_prompt = f"""
@@ -675,7 +674,7 @@ def analyze_text_with_context(text_query: str, file_data: str, chat_history: lis
         response = search_system.client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "당신은 텍스트 분석 전문가이자 친절한 AI 어시스턴트입니다."},
+                {"role": "system", "content": "당신은 텍스트 분석 전문가입니다."},
                 {"role": "user", "content": analysis_prompt}
             ],
             temperature=0.7
@@ -683,23 +682,33 @@ def analyze_text_with_context(text_query: str, file_data: str, chat_history: lis
 
         raw_response = response.choices[0].message.content
 
-        # 응답 전체를 JSON으로 파싱 시도
-        try:
-            analysis_results = json.loads(raw_response)
-            # 분석 결과를 반환
-            return {
-                "query_type": query_type,
-                "answer": "",  # LLM 응답이 JSON 데이터만 있으므로, answer는 빈 문자열로 설정
-                "analysis": analysis_results
-            }
-        except json.JSONDecodeError as e:
-            st.error("분석 결과를 처리하는 중 오류가 발생했습니다.")
-            print(f"JSON 파싱 오류: {e}")
+        # 응답에서 JSON 부분만 추출
+        import re
+        json_match = re.search(r'\{.*\}', raw_response, re.DOTALL)
+        if json_match:
+            json_content = json_match.group(0)
+            try:
+                analysis_results = json.loads(json_content)
+                # 분석 결과를 반환
+                return {
+                    "query_type": query_type,
+                    "answer": "",  # 분석 요청이므로 answer는 빈 문자열
+                    "analysis": analysis_results
+                }
+            except json.JSONDecodeError as e:
+                st.error("JSON 파싱 오류가 발생했습니다.")
+                st.write("LLM 응답:", raw_response)  # 원본 응답 출력
+                print(f"JSON 파싱 오류: {e}")
+                return None
+        else:
+            st.error("LLM 응답에서 JSON 데이터를 찾을 수 없습니다.")
+            st.write("LLM 응답:", raw_response)  # 원본 응답 출력
             return None
 
     except Exception as e:
         st.error(f"분석 중 오류가 발생했습니다: {str(e)}")
         return None
+
 
 
 
