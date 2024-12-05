@@ -1656,11 +1656,11 @@ def handle_analysis_mode():
 def determine_requested_analysis(question: str) -> List[str]:
     """사용자의 질문을 기반으로 원하는 분석 종류를 반환"""
     analysis_types = []
-    if '키워드' in question or '워드 클라우드' in question or '단어' or '빈도' in question:
+    if '키워드' in question or '워드 클라우드' in question or '단어' in question or '빈도' in question:
         analysis_types.append('keyword_frequency')
     if '긍정' in question or '부정' in question or '감정' in question or '감성' in question:
         analysis_types.append('sentiment_analysis')
-    if '카테고리' in question or '주제' in question or '토픽' or '분류' in question:
+    if '카테고리' in question or '주제' in question or '토픽' in question or '빈도' in question:
         analysis_types.append('topic_distribution')
     return analysis_types
 
