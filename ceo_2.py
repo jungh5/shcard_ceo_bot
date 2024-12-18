@@ -34,43 +34,37 @@ voice_id = st.secrets["voice_id"]
 
 
 st.set_page_config(
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
     
 )
 
-# 커스텀 CSS 추가
+# Google Fonts에서 원하는 폰트 로드
 st.markdown("""
-    <style>
-    @font-face {
-        font-family: 'MaruBuBareun_hipiriBold';
-         src: url('https://fastly.jsdelivr.net/gh/projectnoonnu/naverfont_01@1.0/Bareun_hipi.woff') format('woff');
-        font-weight: bold;
-        font-style: normal;
-    }
-    .custom-title {
-        font-family: 'MaruBuBareun_hipiriBold', sans-serif;
-        font-size: 3em; /* 원하는 크기로 조정 */
-        font-weight: bold;
-    }
-    .custom-title1 {
-        font-family: 'MaruBuBareun_hipiriBold', sans-serif;
-        font-size: 16px; /* 원하는 크기로 조정 */
-        font-weight: bold
-        font-style: normal;
-    }
-    fixed-title {
-        position: fixed;
-        top: 5;
-        width: 100%;
-        z-index: 9999;
-        padding: 8px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+<head>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Do+Hyeon&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&display=swap">
+<style>
+.custom-title {
+    font-family: 'Jua', sans-serif !important;  
+    font-size: 40px !important;
+    font-weight: 700 !important;
+}
+.custom-title1 {
+    font-family: 'Do Hyeon', sans-serif !important; 
+    font-size: 20px !important;
+    font-weight: 10% !important;
+}
+
+</style>
+</head>
+""", unsafe_allow_html=True)
+
 
 # 페이지 제목
-st.markdown('<h1 class="custom-title"> 신한카드 신입사원 - CEO 커뮤니케이션  </h1>', unsafe_allow_html=True)
-st.markdown('<h3 class="custom-title1"> 신입사원들은 궁금한 사항을 자유롭게 물어보세요 🙋‍♀️🙋‍♂️ </h3>', unsafe_allow_html=True)
+st.markdown('<div class="custom-title">신한카드 신입사원 - CEO 커뮤니케이션</div>', unsafe_allow_html=True)
+st.markdown('<div class="custom-title1">신입사원들은 궁금한 사항을 자유롭게 물어보세요 🙋‍♀️🙋‍♂️</div>', unsafe_allow_html=True)
+
     
 class StreamlitNewsSearchSystem:
     def __init__(self, naver_client_id: str, naver_client_secret: str, llm_api_key: str, xi_api_key: str, voice_id: str):
@@ -470,15 +464,21 @@ if Path(bg_image_path).exists():
         [data-testid="stBottom"] > div {{
             background: rgba(255, 255, 255, 0); /* 투명화 */
         }}
-        </style>
+        
+        /*특정 영역 색상 변경 */
+        .stMain {{
+            background: rgba(255, 255, 255, 255); /* 투명화 */
+        }}
         """,
         unsafe_allow_html=True
     )
 else:
     st.warning("배경 이미지 파일이 존재하지 않습니다.")
+    
+
 
 def analyze_uploaded_file(file):
-    """업로드된 파일을 처리하여 텍스트 데이터를 추출"""
+    """업로드된 파일을 처리하여 author와 question 컬럼을 자동 추론하고, 질문만 모아서 text_data를 생성"""
     try:
         # 파일 읽기 시도
         if file.name.endswith('.csv'):
@@ -487,72 +487,114 @@ def analyze_uploaded_file(file):
             df = pd.read_excel(file)
         else:
             st.error("지원하지 않는 파일 형식입니다.")
-            return None, None
+            return None, None, None
 
-        # 데이터프레임 정보 출력
-        st.write("### 업로드된 파일 정보")
         # 텍스트 데이터가 포함된 컬럼 찾기
-        text_columns = []
-        for col in df.columns:
-            # 컬럼의 데이터 타입이 object이고 실제 텍스트가 포함된 경우 추가
-            if df[col].dtype == 'object' and df[col].str.len().mean() > 10:
-                text_columns.append(col)
+        text_columns = [col for col in df.columns if df[col].dtype == 'object']
 
         if not text_columns:
             st.error("텍스트 데이터를 포함한 컬럼을 찾을 수 없습니다.")
-            return None, None
+            return None, None, None
 
-        # 사용자에게 분석할 컬럼 선택 옵션 제공
-        selected_column = st.selectbox(
-            "분석할 텍스트 컬럼을 선택하세요:",
-            options=text_columns,
-            help="질문 내용이 포함된 컬럼을 선택해주세요."
-        )
+        # 자동 컬럼 추론 로직
+        author_col_candidates = [col for col in text_columns if '이름' in col]
+        question_col_candidates = [col for col in text_columns if 'CEO에게 어떤 질문을 하고 싶으신가요?' in col]
 
-        # 전체 텍스트 데이터 결합
-        text_data = '\n'.join(df[selected_column].dropna().astype(str))
+        if len(author_col_candidates) == 1 and len(question_col_candidates) == 1:
+            # 자동으로 author_col, question_col 할당
+            author_col = author_col_candidates[0]
+            question_col = question_col_candidates[0]
+            st.success(f"자동으로 작성자 컬럼: {author_col}, 질문 컬럼: {question_col} 을 선택했습니다.")
+        else:
+            # 자동 추론 실패 시 사용자에게 선택 옵션 제공
+            st.info("자동 컬럼 추론에 실패했습니다. 컬럼을 직접 선택해주세요.")
+            author_col = st.selectbox(
+                "작성자(이름) 컬럼을 선택하세요:",
+                options=["(없음)"] + text_columns,
+                help="작성자 정보를 포함한 컬럼을 선택하거나 없으면 (없음)을 선택하세요."
+            )
+            question_col = st.selectbox(
+                "질문(텍스트) 컬럼을 선택하세요:",
+                options=text_columns,
+                help="실제 분석할 질문 텍스트가 들어 있는 컬럼을 선택하세요."
+            )
 
-        return text_data, df
+            if question_col is None:
+                st.info("질문 컬럼을 선택해주세요.")
+                return None, None, None
+
+        # data_list 생성: 각 행에 대해 {"author": ..., "question": ...} 형태
+        data_list = []
+        for idx, row in df.iterrows():
+            author = row[author_col] if author_col != "(없음)" else ""
+            question_text = row[question_col] if not pd.isna(row[question_col]) else ""
+            if pd.isna(author):
+                author = ""
+            data_list.append({
+                "author": str(author),
+                "question": str(question_text)
+            })
+
+        # 분석용 text_data: 질문 컬럼(question_col) 데이터만 합침
+        question_texts = df[question_col].dropna().astype(str).tolist()
+        text_data = '\n'.join(question_texts)
+
+        # 디버깅용 출력
+        st.write("### 업로드된 파일 정보 (일부 데이터)")
+        st.write(df.head())
+
+        # data_list와 df를 반환
+        return (text_data, data_list, df)
 
     except Exception as e:
         st.error(f"파일 처리 중 오류가 발생했습니다: {str(e)}")
         import traceback
         st.write("상세 오류:", traceback.format_exc())
-        return None, None
+        return None, None, None
+
+
 
 
 
 def generate_wordcloud_from_keywords(keyword_data):
-    """키워드 데이터를 기반으로 워드클라우드 생성 (한글 지원)"""
+    """키워드 데이터를 기반으로 워드클라우드 생성 (한글 지원, 불용어 처리)"""
     try:
-        # 키워드 데이터 확인
-        if not keyword_data or not isinstance(keyword_data, list):
-            st.error("유효한 키워드 데이터가 없습니다.")
-            return
-
-        # 워드 클라우드 입력 데이터 생성
-        wordcloud_input = {item["keyword"]: item["count"] for item in keyword_data if "keyword" in item and "count" in item}
-
-        if not wordcloud_input:
-            st.error("키워드 데이터에 빈도가 포함되지 않았습니다.")
-            return
-
-        # 디버깅: 입력값 확인
-        st.write("워드클라우드 데이터:", wordcloud_input)
-
-        # 한글 폰트 설정 (시스템 폰트 자동 탐색)
+        # 불용어 정의
+        stopwords = {
+            '신한카드','궁금합니다'
+        }
+        # 한글 폰트 설정
         font_path = None
         for font in fm.findSystemFonts(fontpaths=None, fontext="ttf"):
-            if "NanumGothic" in font or "Malgun" in font:  # 한글 지원 폰트 찾기
+            if "NanumGothic" in font or "Malgun" in font:
                 font_path = font
                 break
 
         if not font_path:
-            st.error("한글 폰트를 찾을 수 없습니다. 시스템에 한글 폰트를 설치해주세요.")
+            st.error("한글 폰트를 찾을 수 없습니다.")
+            return
+
+        # 불용어 필터링을 위한 데이터 전처리
+        filtered_data = {
+            word: freq for word, freq in keyword_data.items()
+            if word not in stopwords
+        }
+
+        if not filtered_data:
+            st.error("불용어 제거 후 표시할 데이터가 없습니다.")
             return
 
         # 워드클라우드 생성
-        wordcloud = WordCloud(font_path=font_path, width=800, height=400, background_color="white").generate_from_frequencies(wordcloud_input)
+        wordcloud = WordCloud(
+            font_path=font_path,
+            width=800,
+            height=400,
+            background_color="white",
+            max_words=100,  # 최대 표시 단어 수
+            min_font_size=10,  # 최소 폰트 크기
+            relative_scaling=0.5  # 빈도 차이에 따른 크기 차이 조절
+        ).generate_from_frequencies(filtered_data)
+
         plt.figure(figsize=(10, 5))
         plt.imshow(wordcloud, interpolation="bilinear")
         plt.axis("off")
@@ -628,7 +670,7 @@ def analyze_text(text_data, response_data=None):
     st.plotly_chart(fig_topic, use_container_width=True)
     
 
-def analyze_text_with_context(text_query: str, file_data: str, chat_history: list, search_system) -> dict:
+def analyze_text_with_context(text_query: str, file_data: str, data_list: list, chat_history: list, search_system) -> dict:
     try:
         # 질문 유형 분석
         query_type = analyze_query_type(text_query, search_system.client)
@@ -636,11 +678,19 @@ def analyze_text_with_context(text_query: str, file_data: str, chat_history: lis
         # 파일 데이터 길이 제한 (모델의 토큰 제한 고려)
         shortened_file_data = file_data[:2000]  # 필요에 따라 조정
 
-        # 기본 프롬프트 생성 (파일 데이터와 이전 대화 포함)
-        prompt = f"""
-        아래의 파일 내용과 이전 대화를 참고하여 사용자 질문에 답변해주세요.
+        # data_list를 JSON으로 변환 (작성자와 질문 목록)
+        data_list_json = json.dumps(data_list, ensure_ascii=False)
 
-        파일 내용:
+        # 기본 프롬프트 생성
+        # data_list(작성자/질문 리스트)와 shortened_file_data(질문 텍스트) 모두 프롬프트에 제공
+        # LLM에게 "작성자가 누구인지" 물어보면 data_list를 사용해 답변할 수 있고,
+        # 키워드 분석/감성 분석 등은 text_data(질문만 포함)로 처리
+        prompt = f"""
+        아래는 분석할 데이터입니다:
+        데이터 목록(JSON): 
+        {data_list_json}
+
+        질문 텍스트(분석용): 
         {shortened_file_data}
 
         이전 대화:
@@ -648,26 +698,37 @@ def analyze_text_with_context(text_query: str, file_data: str, chat_history: lis
 
         사용자 질문:
         {text_query}
+
+        이 데이터는 "author" 필드에 작성자, "question" 필드에 질문 텍스트가 들어있습니다.
+        키워드, 감성, 주제분석 등은 "question" 필드의 텍스트만 기반으로 하세요.
+        
+        중요 규칙:
+        1. "누가 이 질문을 썼어요?" 같은 질문이 나오면 반드시 data_list를 정확히 검색하여 author를 확인하세요.
+        2. data_list에서 정확히 일치하는 내용을 찾지 못한 경우 "해당 정보를 찾을 수 없습니다"라고 답변하세요.
+        3. 절대로 추측하거나 유추하지 마세요.
+        4. 분석 결과(JSON)에는 author 정보나 이름은 포함하지 마세요.
+        5. 추측하지 말고, data_list에 근거를 두고 답하라.
+        
+        답변 전에 반드시 data_list를 검색하여 정확한 정보만 제공하세요.
         """
 
         if query_type == 'data_analysis':
             # 질문에서 원하는 분석 종류 파악
             requested_analysis = determine_requested_analysis(text_query)
 
-            # LLM에게 요청할 분석 종류를 프롬프트에 포함
             analysis_instructions = ""
             if 'keyword_frequency' in requested_analysis:
                 analysis_instructions += "1. 키워드 빈도수 분석을 수행하고, 결과를 'keyword_frequency' 키에 JSON 배열로 반환하세요.\n"
             if 'sentiment_analysis' in requested_analysis:
-                analysis_instructions += "2. 감성 분석을 수행하고, 결과를 'sentiment_analysis' 키에 JSON 배열로 반환하세요.\n"
+                analysis_instructions += "2. 감성 분석을 수행하고, 결과를 'sentiment_analysis' 키에 JSON 객체로 반환하세요.\n"
             if 'topic_distribution' in requested_analysis:
                 analysis_instructions += "3. 주제 분포 분석을 수행하고, 결과를 'topic_distribution' 키에 JSON 배열로 반환하세요.\n"
 
             if not analysis_instructions:
-                analysis_instructions = "사용자의 질문에 답변하세요."
-
-            # 결과를 반드시 정확한 JSON 형식으로만 반환하도록 지시
-            analysis_instructions += "\n\n**중요**: 결과를 반드시 정확한 JSON 형식으로만 반환하고, 그 외의 텍스트는 일절 포함하지 마세요."
+                analysis_instructions = "사용자의 질문에 답하세요. 단, 분석 결과에 author 필드를 포함하지 마세요."
+            else:
+                # 결과를 반드시 정확한 JSON 형식으로만 반환하도록 지시
+                analysis_instructions += "\n\n**중요**: 결과를 반드시 정확한 JSON 형식으로만 반환하고, 그 외의 텍스트는 일절 포함하지 마세요."
 
             # 프롬프트에 분석 지시사항 추가
             prompt += f"\n{analysis_instructions}"
@@ -684,14 +745,12 @@ def analyze_text_with_context(text_query: str, file_data: str, chat_history: lis
 
             raw_response = response.choices[0].message.content
 
-            # 응답에서 JSON 부분만 추출
             import re
             json_match = re.search(r'\{.*\}', raw_response, re.DOTALL)
             if json_match:
                 json_content = json_match.group(0)
                 try:
                     analysis_results = json.loads(json_content)
-                    # 분석 결과를 반환
                     return {
                         "query_type": query_type,
                         "answer": "",  # 분석 요청이므로 answer는 빈 문자열
@@ -699,29 +758,29 @@ def analyze_text_with_context(text_query: str, file_data: str, chat_history: lis
                     }
                 except json.JSONDecodeError as e:
                     st.error("JSON 파싱 오류가 발생했습니다.")
-                    st.write("LLM 응답:", raw_response)  # 원본 응답 출력
-                    print(f"JSON 파싱 오류: {e}")
+                    st.write("LLM 응답:", raw_response)
                     return None
             else:
                 st.error("LLM 응답에서 JSON 데이터를 찾을 수 없습니다.")
-                st.write("LLM 응답:", raw_response)  # 원본 응답 출력
+                st.write("LLM 응답:", raw_response)
                 return None
         else:
-            # 일반적인 질문 처리
+            # 일반 질문 처리
             response = search_system.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "당신은 텍스트 분석 전문가이자 친절한 AI 어시스턴트입니다."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.7
+                temperature=0.0
             )
 
             raw_response = response.choices[0].message.content
 
             return {
                 "query_type": query_type,
-                "answer": raw_response
+                "answer": raw_response,
+                "analysis": None
             }
     except Exception as e:
         st.error(f"분석 중 오류가 발생했습니다: {str(e)}")
@@ -840,24 +899,23 @@ def display_analysis_results(analysis_results, requested_analysis=None):
     try:
         st.markdown("### 📊 분석 결과")
 
-        # 키워드 빈도수 분석
-        if 'keyword_frequency' in requested_analysis and 'keyword_frequency' in analysis_results and analysis_results['keyword_frequency']:
+        # 키워드 빈도수 분석 (워드클라우드로 변경)
+        if 'keyword_frequency' in requested_analysis and 'keyword_frequency' in analysis_results:
             st.markdown("#### 주요 키워드 분석")
             keyword_data = analysis_results['keyword_frequency']
             if isinstance(keyword_data, list) and len(keyword_data) > 0:
-                # 'frequency' 키를 'count' 키로 변경
+                # frequency를 count로 변환하여 워드클라우드 데이터 생성
+                wordcloud_data = {}
                 for item in keyword_data:
-                    if 'frequency' in item:
-                        item['count'] = item.pop('frequency')
-                keyword_df = pd.DataFrame(keyword_data)
-                # 차트 생성
-                try:
-                    fig_freq = px.bar(keyword_df, x='keyword', y='count', title="주요 키워드 Top 10", labels={'count': '빈도수', 'keyword': '키워드'})
-                    st.plotly_chart(fig_freq, use_container_width=True)
-                except Exception as e:
-                    st.error("키워드 빈도수 차트를 생성하는 중 오류가 발생했습니다.")
-                    print(f"키워드 빈도수 차트 생성 중 오류 발생: {str(e)}")
-                    print("키워드 데이터:", keyword_df)
+                    # frequency 또는 count 키가 있는 경우 모두 처리
+                    value = item.get('frequency', item.get('count', 0))
+                    wordcloud_data[item['keyword']] = value
+                
+                if wordcloud_data:
+                    generate_wordcloud_from_keywords(wordcloud_data)
+                else:
+                    st.error("워드클라우드를 생성할 데이터가 없습니다.")
+
 
         # 감성 분석
         if 'sentiment_analysis' in requested_analysis and 'sentiment_analysis' in analysis_results:
@@ -958,10 +1016,10 @@ def display_combined_analysis(result):
 
     # 답변 표시
     st.markdown("### 💬 답변")
-    st.markdown(result.get("answer", ""))
+    st.markdown(result["answer"])
 
     # 분석 결과가 있는 경우 차트 표시
-    if result.get("query_type") == "data_analysis" and "analysis" in result and result["analysis"]:
+    if result.get("query_type") == "data_analysis" and result.get("analysis"):
         st.markdown("### 📊 분석 결과")
         analysis_results = result["analysis"]
 
@@ -1042,10 +1100,11 @@ def main_analysis_chat():
     if uploaded_file and "file_data" not in st.session_state:
         file_analysis_result = analyze_uploaded_file(uploaded_file)
         if file_analysis_result:
-            text_data, df = file_analysis_result
-            st.session_state.file_data = text_data
-            st.session_state.file_df = df
+            text_data, data_list, df = file_analysis_result
             st.success("파일이 성공적으로 업로드되었습니다.")
+            st.session_state.file_data = text_data
+            st.session_state.data_list = data_list  # data_list도 session_state에 저장
+            st.session_state.file_df = df
     
         # 채팅 인터페이스
     if st.session_state.analysis_mode and "file_data" in st.session_state:
@@ -1060,6 +1119,7 @@ def main_analysis_chat():
                     file_data=st.session_state.file_data,
                     chat_history=st.session_state.messages,
                     search_system=st.session_state.search_system,
+                    data_list=st.session_state.data_list
                 )
                 with st.chat_message("ai", avatar="static/bot_character.png"):
                     display_combined_analysis(result)
@@ -1084,7 +1144,8 @@ def main_analysis_chat():
                     text_query=query,
                     file_data=st.session_state.file_data,
                     chat_history=st.session_state.messages,
-                    search_system=st.session_state.search_system
+                    search_system=st.session_state.search_system,
+                    data_list=st.session_state.data_list
                 )
                 
                 # 분석 결과 표시
@@ -1320,8 +1381,11 @@ def display_bot_section_with_image(title, bot_image_path, content):
     if uploaded_file:
         file_analysis_result = analyze_uploaded_file(uploaded_file)
         if file_analysis_result:  # 유효한 파일만 처리
-            text_data, df = file_analysis_result
+            text_data, data_list, df = file_analysis_result
             st.success("파일이 성공적으로 업로드되었습니다.")
+            st.session_state.file_data = text_data
+            st.session_state.data_list = data_list  # data_list도 session_state에 저장
+            st.session_state.file_df = df
 
             # 분석 버튼 추가
             if st.button("분석 시작"):
@@ -1609,15 +1673,36 @@ def main():
     initialize_session_state()
     create_sidebar_with_text_analysis()
     
-    # 기존 대화 이력 표시
+    # 분석 모드일 때만 파일 업로드 블록을 대화 히스토리 위에 표시
+    if st.session_state.analysis_mode:
+        st.markdown("---")
+        st.markdown("### 📂 파일 업로드")
+        uploaded_file = st.file_uploader(
+            "분석할 텍스트 파일을 업로드하세요 (CSV 또는 XLSX)", 
+            type=["csv", "xlsx"],
+            key="file_uploader_analysis"
+        )
+
+        if uploaded_file:
+            file_analysis_result = analyze_uploaded_file(uploaded_file)
+            if file_analysis_result:
+                text_data, data_list, df = file_analysis_result
+                st.success("파일이 성공적으로 업로드되었습니다.")
+                st.session_state.file_data = text_data
+                st.session_state.data_list = data_list  # data_list도 session_state에 저장
+                st.session_state.file_df = df
+        else:
+            st.info("분석할 파일을 업로드해주세요.")
+
+    # 대화 이력 표시
     paint_history()
 
+    # 모드별 처리
     if st.session_state.analysis_mode:
-        # 분석 모드 처리
         handle_analysis_mode()
     else:
-        # 일반 모드 처리
         handle_regular_mode()
+
             
 def handle_file_upload():
     """파일 업로드 UI 처리"""
@@ -1633,47 +1718,22 @@ def handle_file_upload():
         
 
 def handle_analysis_mode():
-    """분석 모드 UI 및 로직 처리"""
-    st.markdown("---")
-    st.markdown("### 📂 파일 업로드")
-    
-    uploaded_file = st.file_uploader(
-        "분석할 텍스트 파일을 업로드하세요 (CSV 또는 XLSX)", 
-        type=["csv", "xlsx"],
-        key="file_uploader_analysis"
-    )
-
-    if uploaded_file:
-        file_analysis_result = analyze_uploaded_file(uploaded_file)
-        if file_analysis_result:
-            text_data, df = file_analysis_result
-            st.success("파일이 성공적으로 업로드되었습니다.")
-            st.session_state.file_data = text_data
-            st.session_state.file_df = df
-
-    # 파일이 업로드된 경우에만 채팅 입력 표시
-    if st.session_state.get("file_data") is not None:
-        query = st.chat_input(
-            "파일에 대해 궁금한 점을 물어보세요",
-            key="chat_input_analysis"
-        )
+    # 파일이 업로드되어 텍스트 데이터가 존재할 경우에만 질문 창 표시
+    if st.session_state.get("file_data"):
+        query = st.chat_input("파일에 대해 궁금한 점을 물어보세요", key="chat_input_analysis")
         if query:
-            # 사용자 메시지 표시
             send_message(query, "human")
-            
-            # 분석 수행 및 결과 표시
             with st.spinner("분석 중..."):
                 result = analyze_text_with_context(
-                    query,
-                    st.session_state.file_data,
-                    st.session_state.messages,
-                    st.session_state.search_system
+                    text_query=query,
+                    file_data=st.session_state.file_data,
+                    data_list=st.session_state.data_list,
+                    chat_history=st.session_state.messages,
+                    search_system=st.session_state.search_system
+
                 )
 
-            # 요청된 분석 종류 파악
             requested_analysis = determine_requested_analysis(query)
-
-            # AI 응답 메시지 컨테이너
             with st.chat_message("ai", avatar="static/bot_character.png"):
                 if result:
                     if result["query_type"] == "data_analysis":
@@ -1690,25 +1750,27 @@ def handle_analysis_mode():
                             st.markdown("### 주요 포인트")
                             for point in result["key_points"]:
                                 st.markdown(f"- {point}")
-                            
-                if result:
+
                     # 결과를 대화 이력에 저장
-                    # 메시지 내용으로 result['answer']와 result['analysis']를 포함한 딕셔너리를 저장합니다.
                     message_content = {
                         "answer": result.get("answer", ""),
                         "analysis": result.get("analysis", {})
                     }
                     save_message(message_content, "ai", "analysis")
+    else:
+        # 파일 업로드가 아직 안 된 경우 안내 메시지만 표시
+        st.info("분석을 위해 먼저 파일을 업로드해주세요.")
+
 
 
 def determine_requested_analysis(question: str) -> List[str]:
     """사용자의 질문을 기반으로 원하는 분석 종류를 반환"""
     analysis_types = []
-    if any(word in question for word in ['키워드', '워드 클라우드', '단어', '빈도']):
+    if any(word in question for word in ['키워드', '워드 클라우드', '단어', '빈도', '클라우드']):
         analysis_types.append('keyword_frequency')
     if any(word in question for word in ['긍정', '부정', '감정', '감성', '감정 분석', '감성 분석']):
         analysis_types.append('sentiment_analysis')
-    if any(word in question for word in ['카테고리', '주제', '토픽', '분류', '질문의 카테고리']):
+    if any(word in question for word in ['카테고리', '주제', '토픽', '분류', '질문의 카테고리', '카테고리화']):
         analysis_types.append('topic_distribution')
     # 분석 종류를 명시적으로 요청하지 않은 경우 기본적으로 모두 포함
     if not analysis_types:
@@ -1725,7 +1787,8 @@ def process_analysis_query(query):
             text_query=query,
             file_data=st.session_state.file_data,
             chat_history=st.session_state.messages,
-            search_system=st.session_state.search_system
+            search_system=st.session_state.search_system,
+            data_list=st.session_state.data_list
         )
         with st.chat_message("ai", avatar="static/bot_character.png"):
             display_combined_analysis(result)
