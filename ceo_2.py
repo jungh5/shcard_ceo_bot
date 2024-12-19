@@ -504,7 +504,7 @@ def analyze_uploaded_file(file):
             # 자동으로 author_col, question_col 할당
             author_col = author_col_candidates[0]
             question_col = question_col_candidates[0]
-            st.success(f"자동으로 작성자 컬럼: {author_col}, 질문 컬럼: {question_col} 을 선택했습니다.")
+            #st.success(f"자동으로 작성자 컬럼: {author_col}, 질문 컬럼: {question_col} 을 선택했습니다.")
         else:
             # 자동 추론 실패 시 사용자에게 선택 옵션 제공
             st.info("자동 컬럼 추론에 실패했습니다. 컬럼을 직접 선택해주세요.")
@@ -538,11 +538,6 @@ def analyze_uploaded_file(file):
         # 분석용 text_data: 질문 컬럼(question_col) 데이터만 합침
         question_texts = df[question_col].dropna().astype(str).tolist()
         text_data = '\n'.join(question_texts)
-
-        # 디버깅용 출력
-        st.write("### 업로드된 파일 정보 (일부 데이터)")
-        st.write(df.head())
-
         # data_list와 df를 반환
         return (text_data, data_list, df)
 
@@ -775,13 +770,8 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list, 
                 temperature=0.0
             )
 
-            raw_response = response.choices[0].message.content
-
-            return {
-                "query_type": query_type,
-                "answer": raw_response,
-                "analysis": None
-            }
+            return response.choices[0].message.content
+        
     except Exception as e:
         st.error(f"분석 중 오류가 발생했습니다: {str(e)}")
         return None
@@ -1730,37 +1720,33 @@ def handle_analysis_mode():
                     data_list=st.session_state.data_list,
                     chat_history=st.session_state.messages,
                     search_system=st.session_state.search_system
-
                 )
 
             requested_analysis = determine_requested_analysis(query)
             with st.chat_message("ai", avatar="static/bot_character.png"):
                 if result:
-                    if result["query_type"] == "data_analysis":
-                        if "analysis" in result and result["analysis"]:
+                    if isinstance(result, dict):  # 분석 결과인 경우
+                        if result.get("analysis"):
                             display_analysis_results(result["analysis"], requested_analysis)
                         else:
                             st.markdown("### 답변")
-                            st.markdown(result["answer"])
+                            st.markdown(result.get("answer", ""))
                             st.warning("분석 결과를 추출하지 못했습니다.")
-                    else:
+                    else:  # 일반 텍스트 답변인 경우
                         st.markdown("### 답변")
-                        st.markdown(result["answer"])
-                        if "key_points" in result:
-                            st.markdown("### 주요 포인트")
-                            for point in result["key_points"]:
-                                st.markdown(f"- {point}")
+                        st.markdown(result)
 
                     # 결과를 대화 이력에 저장
-                    message_content = {
-                        "answer": result.get("answer", ""),
-                        "analysis": result.get("analysis", {})
-                    }
-                    save_message(message_content, "ai", "analysis")
-    else:
-        # 파일 업로드가 아직 안 된 경우 안내 메시지만 표시
-        st.info("분석을 위해 먼저 파일을 업로드해주세요.")
-
+                    if isinstance(result, dict):
+                        message_content = {
+                            "answer": result.get("answer", ""),
+                            "analysis": result.get("analysis", {}),
+                            "requested_analysis": requested_analysis
+                        }
+                        save_message(message_content, "ai", "analysis")
+                    else:
+                        # 일반 텍스트 답변인 경우
+                        save_message(result, "ai")
 
 
 def determine_requested_analysis(question: str) -> List[str]:
