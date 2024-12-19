@@ -558,16 +558,13 @@ def generate_wordcloud_from_keywords(keyword_data):
         stopwords = {
             '신한카드','궁금합니다'
         }
-        # 한글 폰트 설정
-        font_path = None
-        for font in fm.findSystemFonts(fontpaths=None, fontext="ttf"):
-            if "NanumGothic" in font or "Malgun" in font:
-                font_path = font
-                break
-
-        if not font_path:
-            st.error("한글 폰트를 찾을 수 없습니다.")
+        # 프로젝트 내의 폰트 파일 경로 지정
+        font_path = "fonts/NanumGothic.ttf"  # 폰트 파일을 프로젝트의 fonts 디렉토리에 저장
+        
+        if not os.path.exists(font_path):
+            st.error("한글 폰트 파일이 없습니다. fonts/NanumGothic.ttf 파일을 확인해주세요.")
             return
+        
 
         # 불용어 필터링을 위한 데이터 전처리
         filtered_data = {
