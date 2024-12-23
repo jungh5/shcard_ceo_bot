@@ -249,26 +249,36 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
                         color_discrete_sequence=px.colors.qualitative.Set3
                     )
                     
+                    st.markdown("""
+                    <head>
+                    <link href="https://fonts.googleapis.com/css2?family=Nanum+Gothic&display=swap" rel="stylesheet">
+                    <style>
+                        body, html {
+                            font-family: 'Nanum Gothic', sans-serif;
+                        }
+                    </style>
+                    </head>
+                    """, unsafe_allow_html=True)
+                    
                     # 단일 폰트 설정
                     fig.update_layout(
                         title=dict(
                             text='질문 카테고리 분포',
-                            font=dict(size=20, family="Jua")  # 단일 폰트 지정
+                            font=dict(size=20, family="Nanum Gothic")
                         ),
                         font=dict(
-                            family="Jua",  # 단일 폰트 지정
+                            family="Nanum Gothic",
                             size=14
                         )
                     )
-                    
+
                     fig.update_traces(
-                        textposition='inside', 
-                        textinfo='percent+label',
                         textfont=dict(
-                            family="Jua",  # 단일 폰트 지정
+                            family="Nanum Gothic",
                             size=14
                         )
                     )
+
                     
                     # 차트를 이미지로 변환하여 base64 인코딩
                     chart_bytes = fig.to_image(
