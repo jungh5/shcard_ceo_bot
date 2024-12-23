@@ -429,7 +429,7 @@ def main():
                 )
                 
                 if response:
-                    if any(keyword in query.lower() for keyword in ['카테고리', '분류', '분포', '비율', '통계', '분석']):
+                    if any(keyword in query.lower() for keyword in ['차트']):
                         # 분석 요청의 경우 analyze_text_with_context 함수 내에서 처리됨
                         pass
                     else:
