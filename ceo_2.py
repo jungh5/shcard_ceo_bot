@@ -22,12 +22,13 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Google Fonts 로드
+# Google Fonts 로드 (최초 한 번만 로드)
 st.markdown("""
 <head>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Do+Hyeon&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&display=swap">
+<link href="https://fonts.googleapis.com/css2?family=Nanum+Gothic&display=swap" rel="stylesheet">
 <style>
 .custom-title {
     font-family: 'Jua', sans-serif !important;  
@@ -38,6 +39,9 @@ st.markdown("""
     font-family: 'Do Hyeon', sans-serif !important; 
     font-size: 20px !important;
     font-weight: 10% !important;
+}
+body, html {
+    font-family: 'Nanum Gothic', sans-serif;
 }
 </style>
 </head>
@@ -248,27 +252,6 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
                         title='질문 카테고리 분포',
                         color_discrete_sequence=px.colors.qualitative.Set3
                     )
-                    
-                    # Google Fonts 로드
-                    st.markdown("""
-                        <head>
-                            <link href="https://fonts.googleapis.com/css2?family=Nanum+Gothic&display=swap" rel="stylesheet">
-                            <style>
-                                body, html {
-                                    font-family: 'Nanum Gothic', sans-serif;
-                                }
-                            </style>
-                        </head>
-                    """, unsafe_allow_html=True)
-
-                    # Plotly 차트 렌더링
-                    fig = px.pie(
-                        df,
-                        values='percentage',
-                        names='category',
-                        title='질문 카테고리 분포',
-                        color_discrete_sequence=px.colors.qualitative.Set3
-                    )
 
                     # 한글 폰트를 Plotly 차트에 적용
                     fig.update_layout(
@@ -292,7 +275,6 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
                     # Streamlit에 Plotly 차트 표시
                     st.plotly_chart(fig)
 
-                    
                     # 차트를 이미지로 변환하여 base64 인코딩
                     chart_bytes = fig.to_image(
                         format="png",
@@ -302,13 +284,11 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
                     )
                     chart_base64 = base64.b64encode(chart_bytes).decode("utf-8")
                     
-                    # Streamlit에 차트 표시
-                    st.markdown(f"![카테고리 분포 차트](data:image/png;base64,{chart_base64})", unsafe_allow_html=True)
                 else:
                     chart_base64 = None
 
                 # 답변 표시 및 히스토리에 저장
-                st.markdown(response_text, unsafe_allow_html=True)
+                # st.markdown(response_text, unsafe_allow_html=True)
                 save_message(response_text, "assistant", image_base64=chart_base64)
                 
                 return result['answer']
@@ -353,19 +333,23 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
             
             # 스트리밍 응답 처리
             full_response = ""
-            message_placeholder = st.empty()
+            # 아바타와 함께 메시지 컨테이너 생성
             
-            try:
-                for chunk in response:
-                    if chunk and hasattr(chunk.choices[0].delta, 'content') and chunk.choices[0].delta.content:
-                        full_response += chunk.choices[0].delta.content
+            with st.chat_message("assistant", avatar=os.path.join(ASSETS_DIR, 'bot_character.png')):
+                message_placeholder = st.empty()
+                try:
+                    for chunk in response:
+                        if chunk and hasattr(chunk.choices[0].delta, 'content') and chunk.choices[0].delta.content:
+                            full_response += chunk.choices[0].delta.content
+                            message_placeholder.markdown(full_response + "▌")
+                            time.sleep(0.01)
+                    message_placeholder.markdown(full_response)
+                    return full_response
                 
-                return full_response
-                
-            except Exception as e:
-                st.error(f"스트리밍 처리 중 오류가 발생했습니다: {str(e)}")
-                return None
-
+                except Exception as e:
+                    st.error(f"스트리밍 처리 중 오류가 발생했습니다: {str(e)}")
+                    return None
+            
     except Exception as e:
         st.error(f"분석 중 오류가 발생했습니다: {str(e)}")
         return None
@@ -400,7 +384,9 @@ def send_message(message, role, image_base64=None, is_history=False):
                     placeholder.markdown(displayed_message)
                 else:
                     st.markdown(message, unsafe_allow_html=True)
-                if image_base64:
+                
+                # 히스토리일 경우에만 이미지 렌더링
+                if is_history and image_base64:
                     st.markdown(f"![차트](data:image/png;base64,{image_base64})", unsafe_allow_html=True)
         else:
             with st.chat_message(role):
@@ -414,14 +400,17 @@ def send_message(message, role, image_base64=None, is_history=False):
                     placeholder.markdown(displayed_message)
                 else:
                     st.markdown(message, unsafe_allow_html=True)
-                if image_base64:
+                
+                # 히스토리일 경우에만 이미지 렌더링
+                if is_history and image_base64:
                     st.markdown(f"![차트](data:image/png;base64,{image_base64})", unsafe_allow_html=True)
                     
     except Exception as e:
         print(f"Avatar loading error: {str(e)}")
         with st.chat_message(role):
             st.markdown(message, unsafe_allow_html=True)
-            if image_base64:
+            # 히스토리일 경우에만 이미지 렌더링
+            if is_history and image_base64:
                 st.markdown(f"![차트](data:image/png;base64,{image_base64})", unsafe_allow_html=True)
 
 def main():
@@ -478,7 +467,7 @@ def main():
                         pass
                     else:
                         # 일반 응답의 경우 한 번만 표시
-                        send_message(response, "assistant")
+                        #send_message(response, "assistant")
                         save_message(response, "assistant")
 
 if __name__ == "__main__":
