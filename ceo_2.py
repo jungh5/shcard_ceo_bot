@@ -249,17 +249,25 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
                         color_discrete_sequence=px.colors.qualitative.Set3
                     )
                     
-                    # 한글 폰트 설정
+                    # 단일 폰트 설정
                     fig.update_layout(
-                        title_font_family="Malgun Gothic",  # 제목 폰트
-                        font_family="Malgun Gothic",        # 전체 폰트
-                        title_font_size=20                  # 제목 크기
+                        title=dict(
+                            text='질문 카테고리 분포',
+                            font=dict(size=20, family="Arial")  # 단일 폰트 지정
+                        ),
+                        font=dict(
+                            family="Arial",  # 단일 폰트 지정
+                            size=14
+                        )
                     )
                     
                     fig.update_traces(
                         textposition='inside', 
                         textinfo='percent+label',
-                        textfont_family="Malgun Gothic"     # 수정된 부분
+                        textfont=dict(
+                            family="Arial",  # 단일 폰트 지정
+                            size=14
+                        )
                     )
                     
                     # 차트를 이미지로 변환하여 base64 인코딩

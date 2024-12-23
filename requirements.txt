@@ -7,4 +7,4 @@ matplotlib
 beautifulsoup4
 requests
 openai
-kaleido
+kaleido==0.2.1
