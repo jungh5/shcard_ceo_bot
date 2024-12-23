@@ -1,2 +1,1 @@
-# packages.txt 파일 생성 후 다음 내용 추가
 fonts-nanum
