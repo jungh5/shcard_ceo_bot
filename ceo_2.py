@@ -249,18 +249,28 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
                         color_discrete_sequence=px.colors.qualitative.Set3
                     )
                     
+                    # Google Fonts 로드
                     st.markdown("""
-                    <head>
-                    <link href="https://fonts.googleapis.com/css2?family=Nanum+Gothic&display=swap" rel="stylesheet">
-                    <style>
-                        body, html {
-                            font-family: 'Nanum Gothic', sans-serif;
-                        }
-                    </style>
-                    </head>
+                        <head>
+                            <link href="https://fonts.googleapis.com/css2?family=Nanum+Gothic&display=swap" rel="stylesheet">
+                            <style>
+                                body, html {
+                                    font-family: 'Nanum Gothic', sans-serif;
+                                }
+                            </style>
+                        </head>
                     """, unsafe_allow_html=True)
-                    
-                    # 단일 폰트 설정
+
+                    # Plotly 차트 렌더링
+                    fig = px.pie(
+                        df,
+                        values='percentage',
+                        names='category',
+                        title='질문 카테고리 분포',
+                        color_discrete_sequence=px.colors.qualitative.Set3
+                    )
+
+                    # 한글 폰트를 Plotly 차트에 적용
                     fig.update_layout(
                         title=dict(
                             text='질문 카테고리 분포',
@@ -278,6 +288,9 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
                             size=14
                         )
                     )
+
+                    # Streamlit에 Plotly 차트 표시
+                    st.plotly_chart(fig)
 
                     
                     # 차트를 이미지로 변환하여 base64 인코딩
