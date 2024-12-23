@@ -290,17 +290,18 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
                     history_fig.update_layout(
                         title=dict(
                             text='질문 카테고리 분포',
-                            font=dict(size=20, family="Nanum Gothic")
+                            font=dict(size=20, 
+                            family="Nanum Gothic, Malgun Gothic, Arial Unicode MS, Arial")
                         ),
                         font=dict(
-                            family="Nanum Gothic",
+                            family="Nanum Gothic, Malgun Gothic, Arial Unicode MS, Arial",
                             size=14
                         )
                     )
 
                     history_fig.update_traces(
                         textfont=dict(
-                            family="Nanum Gothic",
+                            family="Nanum Gothic, Malgun Gothic, Arial Unicode MS, Arial",
                             size=14
                         )
                     )
