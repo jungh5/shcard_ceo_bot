@@ -276,13 +276,42 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
                     with st.chat_message("assistant", avatar=os.path.join(ASSETS_DIR, 'bot_character.png')):
                         st.markdown(response_text)
                         st.plotly_chart(fig)
+                        
+                    # 히스토리용 차트를 동일한 설정으로 새로 생성
+                    history_fig = px.pie(
+                        df, 
+                        values='percentage', 
+                        names='category',
+                        title='질문 카테고리 분포',
+                        color_discrete_sequence=px.colors.qualitative.Set3
+                    )
 
-                    # 차트를 이미지로 변환하여 base64 인코딩
-                    chart_bytes = fig.to_image(
+                    # 히스토리용 차트에도 동일한 한글 폰트 설정 적용
+                    history_fig.update_layout(
+                        title=dict(
+                            text='질문 카테고리 분포',
+                            font=dict(size=20, family="Nanum Gothic")
+                        ),
+                        font=dict(
+                            family="Nanum Gothic",
+                            size=14
+                        )
+                    )
+
+                    history_fig.update_traces(
+                        textfont=dict(
+                            family="Nanum Gothic",
+                            size=14
+                        )
+                    )
+
+                    # 히스토리용 차트를 이미지로 변환
+                    chart_bytes = history_fig.to_image(
                         format="png",
-                        width=800,                          # 이미지 너비
-                        height=600,                         # 이미지 높이
-                        scale=2  
+                        width=800,
+                        height=600,
+                        scale=2,
+                        engine="kaleido"  # kaleido 엔진 명시적 지정
                     )
                     chart_base64 = base64.b64encode(chart_bytes).decode("utf-8")
                     
