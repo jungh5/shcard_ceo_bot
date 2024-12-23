@@ -277,47 +277,33 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
                         st.markdown(response_text)
                         st.plotly_chart(fig)
                         
-                    # 히스토리용 차트를 동일한 설정으로 새로 생성
-                    history_fig = go.Figure(data=[go.Pie(
-                        values=df['percentage'],
-                        labels=df['category'],
-                        textinfo='label+percent',
-                        hole=0.3,
-                        textfont=dict(
-                            family='Nanum Gothic, Arial',
-                            size=14
-                        ),
-                        marker=dict(
-                            colors=px.colors.qualitative.Set3  # 실시간 차트와 동일한 색상 팔레트 사용
-                        )
-                    )])
+                    # 히스토리용 차트를 실시간 차트와 동일한 설정으로 생성
+                    history_fig = px.pie(
+                        df, 
+                        values='percentage', 
+                        names='category',
+                        title='질문 카테고리 분포',
+                        color_discrete_sequence=px.colors.qualitative.Set3  # 실시간 차트와 동일한 색상
+                    )
 
-                    # 히스토리용 차트에 한글 폰트 설정 적용
+                    # 실시간 차트와 동일한 폰트 설정 적용
                     history_fig.update_layout(
                         title=dict(
                             text='질문 카테고리 분포',
-                            font=dict(
-                                size=20,
-                                family='Nanum Gothic, Arial'
-                            )
+                            font=dict(size=20, family="Nanum Gothic")
                         ),
                         font=dict(
-                            family='Nanum Gothic, Arial',
+                            family="Nanum Gothic",
                             size=14
-                        ),
-                        showlegend=True,
-                        width=800,
-                        height=600
+                        )
                     )
 
-                    # 이미지로 변환 시 추가 설정
-                    config = {
-                        'toImageButtonOptions': {
-                            'format': 'png',
-                            'filename': 'chart',
-                            'scale': 2
-                        }
-                    }
+                    history_fig.update_traces(
+                        textfont=dict(
+                            family="Nanum Gothic",
+                            size=14
+                        )
+                    )
 
                     # 히스토리용 차트를 이미지로 변환
                     chart_bytes = history_fig.to_image(
