@@ -271,9 +271,11 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
                             size=14
                         )
                     )
-
-                    # Streamlit에 Plotly 차트 표시
-                    st.plotly_chart(fig)
+                    
+                    # 텍스트와 차트를 함께 표시
+                    with st.chat_message("assistant", avatar=os.path.join(ASSETS_DIR, 'bot_character.png')):
+                        st.markdown(response_text)
+                        st.plotly_chart(fig)
 
                     # 차트를 이미지로 변환하여 base64 인코딩
                     chart_bytes = fig.to_image(
