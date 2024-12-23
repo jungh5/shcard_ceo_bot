@@ -248,10 +248,27 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
                         title='질문 카테고리 분포',
                         color_discrete_sequence=px.colors.qualitative.Set3
                     )
-                    fig.update_traces(textposition='inside', textinfo='percent+label')
+                    
+                    # 한글 폰트 설정
+                    fig.update_layout(
+                        title_font_family="Malgun Gothic",  # 제목 폰트
+                        font_family="Malgun Gothic",        # 전체 폰트
+                        title_font_size=20                  # 제목 크기
+                    )
+                    
+                    fig.update_traces(
+                        textposition='inside', 
+                        textinfo='percent+label',
+                        textfont_family="Malgun Gothic"     # 수정된 부분
+                    )
                     
                     # 차트를 이미지로 변환하여 base64 인코딩
-                    chart_bytes = fig.to_image(format="png")
+                    chart_bytes = fig.to_image(
+                        format="png",
+                        width=800,                          # 이미지 너비
+                        height=600,                         # 이미지 높이
+                        scale=2  
+                    )
                     chart_base64 = base64.b64encode(chart_bytes).decode("utf-8")
                     
                     # Streamlit에 차트 표시
