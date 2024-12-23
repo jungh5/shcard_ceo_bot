@@ -165,7 +165,7 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
 
         # 분석 요청인지 확인
         is_analysis_request = any(keyword in text_query.lower() for keyword in [
-            '카테고리', '분류', '분포', '비율', '통계', '분석', '카테고리화'
+            '차트'
         ])
 
         # 프롬프트 설정
@@ -310,12 +310,8 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
             try:
                 for chunk in response:
                     if chunk and hasattr(chunk.choices[0].delta, 'content') and chunk.choices[0].delta.content:
-                        content = chunk.choices[0].delta.content
-                        full_response += content
-                        message_placeholder.markdown(full_response + "▌")
+                        full_response += chunk.choices[0].delta.content
                 
-                # 최종 응답 설정
-                message_placeholder.empty()
                 return full_response
                 
             except Exception as e:
