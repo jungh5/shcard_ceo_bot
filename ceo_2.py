@@ -265,7 +265,7 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
                         textposition='inside', 
                         textinfo='percent+label',
                         textfont=dict(
-                            family="Arial",  # 단일 폰트 지정
+                            family="Jua",  # 단일 폰트 지정
                             size=14
                         )
                     )
