@@ -253,10 +253,10 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
                     fig.update_layout(
                         title=dict(
                             text='질문 카테고리 분포',
-                            font=dict(size=20, family="Arial")  # 단일 폰트 지정
+                            font=dict(size=20, family="Jua")  # 단일 폰트 지정
                         ),
                         font=dict(
-                            family="Arial",  # 단일 폰트 지정
+                            family="Jua",  # 단일 폰트 지정
                             size=14
                         )
                     )
