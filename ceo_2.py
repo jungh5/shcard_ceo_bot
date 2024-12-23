@@ -1,44 +1,28 @@
-# streamlit_app.py
-import hashlib
 import streamlit as st
-import time
-from pathlib import Path
-import io
-import requests
-import threading
-from typing import List, Dict
+import pandas as pd
+from datetime import datetime
 import json
-from datetime import datetime, timedelta
-from bs4 import BeautifulSoup
-import re
-import itertools
 from openai import OpenAI
-import os
 import base64
+from pathlib import Path
+import os
 import plotly.express as px
 import plotly.graph_objects as go
-import pandas as pd
-import openpyxl
-from wordcloud import WordCloud
-import matplotlib.pyplot as plt
-from matplotlib import rc
-import matplotlib.font_manager as fm
+import time
 
-
-# API 키 기본값 설정
+# API 키 설정
 llm_api_key = st.secrets["llm_api_key"]
-naver_client_id = st.secrets["naver_client_id"]
-naver_client_secret = st.secrets["naver_client_secret"]
-xi_api_key = st.secrets["xi_api_key"]
-voice_id = st.secrets["voice_id"]
 
+# 현재 스크립트의 디렉토리를 기준으로 assets 폴더 경로 설정
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+ASSETS_DIR = os.path.join(SCRIPT_DIR, 'static')
 
+# 페이지 설정
 st.set_page_config(
     initial_sidebar_state="expanded",
-    
 )
 
-# Google Fonts에서 원하는 폰트 로드
+# Google Fonts 로드
 st.markdown("""
 <head>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&display=swap">
@@ -55,364 +39,13 @@ st.markdown("""
     font-size: 20px !important;
     font-weight: 10% !important;
 }
-
 </style>
 </head>
 """, unsafe_allow_html=True)
 
-
 # 페이지 제목
 st.markdown('<div class="custom-title">신한카드 신입사원 - CEO 커뮤니케이션</div>', unsafe_allow_html=True)
 st.markdown('<div class="custom-title1">신입사원들은 궁금한 사항을 자유롭게 물어보세요 🙋‍♀️🙋‍♂️</div>', unsafe_allow_html=True)
-
-    
-class StreamlitNewsSearchSystem:
-    def __init__(self, naver_client_id: str, naver_client_secret: str, llm_api_key: str, xi_api_key: str, voice_id: str):
-        self.naver_client_id = naver_client_id
-        self.naver_client_secret = naver_client_secret
-        self.llm_api_key = llm_api_key
-        self.xi_api_key = xi_api_key  # ElevenLabs API 키
-        self.voice_id = voice_id  # ElevenLabs Voice ID
-        self.client = OpenAI(api_key=llm_api_key)
-    
-    def extract_keywords(self, query: str, progress_bar) -> List[str]:
-        """LLM을 사용하여 검색 키워드 추출"""
-        try:
-            progress_bar.progress(10)
-            st.write("정보를 찾고 있습니다... 잠시만 기다려주세요")
-            
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "당신은 신한카드 답변 관련 봇입니다. 회사 관련 문의나 질문이 들어왔을 때, 입력된 질문에서 핵심 검색 키워드만 추출해주세요. 쉼표로 구분된 형태로 반환해주세요."
-                    },
-                    {
-                        "role": "user",
-                        "content": query
-                    }
-                ]
-            )
-            
-            keywords = response.choices[0].message.content.split(',')
-            keywords = [keyword.strip() for keyword in keywords]
-            
-            if '문동권' not in keywords:
-                keywords.insert(0, '문동권')
-            
-            progress_bar.progress(20)
-            return keywords
-            
-        except Exception as e:
-            st.error(f"키워드 추출 중 오류 발생: {str(e)}")
-            raise e
-
-    def clean_html_text(self, html_content: str) -> str:
-        """HTML 태그 제거 및 텍스트 정제"""
-        soup = BeautifulSoup(html_content, 'html.parser')
-        text = soup.get_text(separator=' ', strip=True)
-        text = re.sub(r'\s+', ' ', text)
-        text = re.sub(r'[^\w\s\.,!?"\'-]', '', text)
-        return text.strip()
-
-    def get_full_article_content(self, url: str) -> str:
-        """기사 URL에서 전체 내용 크롤링"""
-        try:
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-            
-            if 'news.naver.com' in url:
-                response = requests.get(url, headers=headers)
-                response.raise_for_status()
-                soup = BeautifulSoup(response.text, 'html.parser')
-                
-                for selector in ['#articleBody', '#articleBodyContents', '#newsEndContents']:
-                    article_content = soup.select_one(selector)
-                    if article_content:
-                        break
-                        
-            elif 'ceoscoredaily.com' in url:
-                response = requests.get(url, headers=headers)
-                response.raise_for_status()
-                soup = BeautifulSoup(response.text, 'html.parser')
-                article_content = soup.select_one('.view_cont')
-                
-            if article_content:
-                for unnecessary in article_content.select('script, style, header, footer'):
-                    unnecessary.decompose()
-                return self.clean_html_text(str(article_content))
-                    
-            return "기사 본문을 가져올 수 없습니다."
-                
-        except Exception as e:
-            return "기사 본문을 가져올 수 없습니다."
-
-    def search_naver_news(self, keywords: List[str], progress_bar, display: int = 5) -> List[Dict]:
-        """네이버 뉴스 API로 뉴스 검색"""
-        try:
-            query = ' '.join(keywords)
-            url = "https://openapi.naver.com/v1/search/news.json"
-            headers = {
-                "X-Naver-Client-Id": self.naver_client_id,
-                "X-Naver-Client-Secret": self.naver_client_secret
-            }
-            params = {
-                "query": query,
-                "display": display,
-                "sort": "date"
-            }
-            
-            progress_bar.progress(30)
-            
-            response = requests.get(url, headers=headers, params=params)
-            response.raise_for_status()
-            news_items = response.json()['items']
-            
-            filtered_items = []
-            with st.spinner("관련 기사 분석 중..."):
-                for item in news_items:
-                    title = re.sub('<[^<]+?>', '', item['title'])
-                    
-                    shinhan_keywords = ['신한카드', '문동권']
-                    has_shinhan_keyword = any(keyword in title for keyword in shinhan_keywords)
-                    
-                    pub_date = datetime.strptime(item['pubDate'], '%a, %d %b %Y %H:%M:%S +0900')
-                    if pub_date.year >= 2023 and has_shinhan_keyword:
-                        full_content = self.get_full_article_content(item['link'])
-                        item['full_content'] = full_content
-                        filtered_items.append(item)
-            
-            progress_bar.progress(40)
-            return filtered_items
-            
-        except Exception as e:
-            return []
-
-    def search_with_progressive_keywords(self, keywords: List[str], progress_bar, display: int = 5) -> List[Dict]:
-        """키워드를 점진적으로 줄여가며 검색"""
-        try:
-            all_combinations = []
-            other_keywords = [k for k in keywords if k != '문동권']
-            
-            # 검색 시작 알림
-            with st.spinner("뉴스 검색 중..."):
-                for i in range(len(other_keywords), 0, -1):
-                    for combo in itertools.combinations(other_keywords, i):
-                        keywords_combo = ['문동권'] + list(combo)
-                        all_combinations.append(keywords_combo)
-                    
-                    for combo in all_combinations:
-                        try:
-                            news_items = self.search_naver_news(combo, progress_bar, display)
-                            if news_items:
-                                return news_items
-                        except Exception as e:
-                            continue
-                
-                # 검색 결과가 없을 때
-                st.info("관련된 다른 키워드로 검색해보세요.")
-                return []
-                
-        except Exception as e:
-            st.error("검색 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
-            return []
-
-    def analyze_news_content(self, news_items: List[Dict], original_query: str, progress_bar) -> str:
-        """뉴스 내용 분석 개선 버전"""
-        try:
-            st.write("뉴스 내용 분석 중...")
-            progress_bar.progress(60)
-            
-            # 뉴스 메타데이터 추출 및 정리
-            news_metadata = []
-            news_contents = []
-            
-            for item in news_items:
-                # 메타데이터와 콘텐츠 분리
-                metadata = {
-                    "title": item['title'],
-                    "date": item['pubDate'],
-                    "url": item['link']
-                }
-                news_metadata.append(metadata)
-                
-                # 전체 콘텐츠는 별도로 저장
-                news_contents.append(item['full_content'])
-            
-            # 프롬프트 컨텍스트 강화
-            system_prompt = """당신은 신한카드의 CEO와 신입사원의 소통을 돕는 챗봇입니다.
-            주어진 뉴스 기사들을 분석하여 다음을 수행하세요:
-            1. 사용자의 원본 질문에 직접적으로 관련된 내용을 우선적으로 찾습니다.
-            2. 문동권 사장님의 실제 발언이 있다면 그대로 인용합니다.
-            3. 실제 발언이 없다면 기사 내용을 바탕으로 일관된 메시지를 구성합니다.
-            4. 신한카드의 전략과 방향성을 고려하여 답변합니다."""
-
-            user_prompt = f"""원본 질문: {original_query}
-
-    뉴스 기사 내용:
-    {json.dumps(news_contents, ensure_ascii=False, indent=2)}
-
-    기사 메타데이터:
-    {json.dumps(news_metadata, ensure_ascii=False, indent=2)}
-
-    다음 형식으로 응답해주세요:
-
-    [문동권 사장님 말씀]
-    (질문과 직접 관련된 30초 분량의 답변)
-
-    [참고 기사]
-    - 제목: (관련성 높은 순서대로)
-    - 날짜: (기사 날짜)
-    - URL: (기사 링크)
-    - 관련 내용: (질문과 관련된 핵심 내용)
-
-    [신입사원 가이드]
-    (앞선 내용을 바탕으로 신입사원들이 참고할 수 있는 구체적인 가이드라인)"""
-
-            progress_bar.progress(70)
-            
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.2
-            )
-            
-            progress_bar.progress(80)
-            return response.choices[0].message.content
-            
-        except Exception as e:
-            st.error(f"뉴스 내용 분석 중 오류 발생: {str(e)}")
-            raise e
-
-    def extract_tts_content(self, text: str) -> str:
-        """TTS용 콘텐츠 추출"""
-        try:
-            if '[참고 기사]' in text:
-                text = text.split('[참고 기사]')[0].strip()
-            st.markdown(f"#### TTS용 텍스트:\n{text}")  # 텍스트를 UI에 출력
-            return text
-            
-        except Exception as e:
-            st.error(f"TTS 내용 추출 중 오류 발생: {str(e)}")
-            return text
-    @st.cache_data
-    def generate_tts_with_elevenlabs(_self, text: str, xi_api_key: str, voice_id: str) -> str:
-        """ElevenLabs API를 호출하여 TTS 생성"""
-        try:
-            # 텍스트의 고유 해시값 생성 (캐싱 키로 활용)
-            text_hash = hashlib.md5(text.encode('utf-8')).hexdigest()
-            audio_file = f"output_{text_hash}.mp3"
-            
-            # 캐시된 파일이 이미 존재하면 해당 파일 경로 반환
-            if Path(audio_file).exists():
-                return audio_file
-            
-            url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
-            headers = {
-                "Accept": "audio/mpeg",
-                "Content-Type": "application/json",
-                "xi-api-key": xi_api_key
-            }
-            data = {
-                "text": text,
-                "model_id": "eleven_multilingual_v2",
-                "voice_settings": {
-                    "stability": 0.75,
-                    "similarity_boost": 0.9,
-                    "style": 0.2,
-                    "use_speaker_boost": True,
-                    "speaking_rate": 1.2
-                     
-                }
-            }
-
-            response = requests.post(url, json=data, headers=headers, stream=True)
-            if response.status_code == 200:
-                audio_file = "output.mp3"
-                with open(audio_file, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=1024):
-                        if chunk:
-                            f.write(chunk)
-                return audio_file
-            else:
-                st.error(f"ElevenLabs API 호출 실패: {response.status_code}, {response.text}")
-                return None
-
-        except Exception as e:
-            st.error(f"ElevenLabs TTS 생성 중 오류 발생: {str(e)}")
-            return None
-    
-    def speak_result(self, text: str) -> None:
-        """Streamlit을 사용하여 결과 음성 출력"""
-        try:
-            # [문동권 사장님 말씀] 섹션만 추출
-            if "[문동권 사장님 말씀]" in text:
-                tts_content = text.split("[문동권 사장님 말씀]")[1].split("[참고 기사]")[0].strip()
-            else:
-                return
-
-            # TTS 생성 호출
-            audio_path = self.generate_tts_with_elevenlabs(tts_content, self.xi_api_key, self.voice_id)
-
-            if audio_path and Path(audio_path).exists():
-                # Streamlit을 활용하여 오디오 재생
-                with open(audio_path, "rb") as audio_file:
-                    audio_bytes = audio_file.read()
-                    st.audio(audio_bytes, format="audio/mp3")
-            else:
-                st.error("음성 파일을 생성하지 못했습니다.")
-        except Exception as e:
-            st.error(f"TTS 처리 중 오류 발생: {str(e)}")
-
-
-def save_message(message_content, role, message_type="chat"):
-    """
-    Save message to unified history with additional metadata
-    message_type can be "chat" or "analysis"
-    """
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-    
-    message_entry = {
-        "message": message_content,  # 메시지 내용
-        "role": role,
-        "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        "type": message_type
-    }
-    st.session_state.messages.append(message_entry)
-
-
-# 현재 스크립트의 디렉토리를 기준으로 assets 폴더 경로 설정
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ASSETS_DIR = os.path.join(SCRIPT_DIR, 'static')
-
-def get_avatar_path(role: str) -> str:
-    """이미지 파일의 절대 경로를 반환"""
-    image_path = os.path.join(ASSETS_DIR, f'{role}_character.png')
-    if os.path.exists(image_path):
-        return image_path
-    print(f"Warning: Image not found at {image_path}")  # 디버깅용
-    return None
-
-def send_message(message, role, save=True):
-    """Display message with appropriate avatar"""
-    avatar_path = get_avatar_path('human' if role == 'human' else 'bot')
-    try:
-        with st.chat_message(role, avatar=avatar_path):
-            st.markdown(message, unsafe_allow_html=True)
-        if save:  # 메시지를 한 번만 저장
-            save_message(message, role)
-    except Exception as e:
-        print(f"Error displaying message with avatar: {e}")
-        with st.chat_message(role):
-            st.markdown(message, unsafe_allow_html=True)
-        if save:
-            save_message(message, role)
 
 def get_image_as_base64(image_path):
     """이미지를 Base64 문자열로 변환"""
@@ -424,7 +57,7 @@ def get_image_as_base64(image_path):
         return ""
 
 # 배경 이미지 추가
-bg_image_path = "static/bg.png"  # 배경 이미지 경로
+bg_image_path = "static/bg.png"
 if Path(bg_image_path).exists():
     bg_image_base64 = get_image_as_base64(bg_image_path)
     st.markdown(
@@ -437,50 +70,40 @@ if Path(bg_image_path).exists():
             background-attachment: fixed;
             background-repeat: no-repeat;
         }}
-
-        /* 텍스트 입력창 하단 영역 (stChatInput) */
-        [data-testid="stApp"]{{
+        [data-testid="stApp"] {{
             background-image: url("data:image/png;base64,{bg_image_base64}");
             background-size: cover;
-    /       background: rgba(255, 255, 255, 0); /* 투명화 *
         }}
-        
-        /* 사이드바 배경 투명화 */
-        [data-testid="stSidebar"] {{
-            background: rgba(255, 255, 255, 0); /* 투명화 */
-        }}
-        
-        /* 사이드바 배경 투명화 */
-        [data-testid="stHeader"] {{
-            background: rgba(255, 255, 255, 0); /* 투명화 */
-        }}
-        
-        /* 사이드바 배경 투명화 */
+        [data-testid="stSidebar"],
+        [data-testid="stHeader"],
+        [data-testid="stToolbar"],
         [data-testid="stBottom"] {{
-            background: rgba(255, 255, 255, 0); /* 투명화 */
+            background: rgba(255, 255, 255, 0);
         }}
         
-        /* 사이드바 배경 투명화 */
-        [data-testid="stBottom"] > div {{
-            background: rgba(255, 255, 255, 0); /* 투명화 */
+        /* 메인 컨텐츠 영역 배경색 설정 */
+        .stMain.st-emotion-cache-bm2z3a.ekr3hml1 {{
+            background-color: rgb(255, 255, 255) !important;
         }}
-        
-        /*특정 영역 색상 변경 */
-        .stMain {{
-            background: rgba(255, 255, 255, 255); /* 투명화 */
-        }}
+        </style>
         """,
         unsafe_allow_html=True
     )
-else:
-    st.warning("배경 이미지 파일이 존재하지 않습니다.")
-    
 
+def initialize_session_state():
+    """세션 상태 초기화"""
+    if 'messages' not in st.session_state:
+        st.session_state.messages = []
+    if 'file_data' not in st.session_state:
+        st.session_state.file_data = None
+    if 'data_list' not in st.session_state:
+        st.session_state.data_list = None
+    if 'client' not in st.session_state:
+        st.session_state.client = OpenAI(api_key=llm_api_key)
 
 def analyze_uploaded_file(file):
-    """업로드된 파일을 처리하여 author와 question 컬럼을 자동 추론하고, 질문만 모아서 text_data를 생성"""
+    """업로드된 파일 분석"""
     try:
-        # 파일 읽기 시도
         if file.name.endswith('.csv'):
             df = pd.read_csv(file)
         elif file.name.endswith('.xlsx'):
@@ -489,41 +112,29 @@ def analyze_uploaded_file(file):
             st.error("지원하지 않는 파일 형식입니다.")
             return None, None, None
 
-        # 텍스트 데이터가 포함된 컬럼 찾기
         text_columns = [col for col in df.columns if df[col].dtype == 'object']
-
         if not text_columns:
             st.error("텍스트 데이터를 포함한 컬럼을 찾을 수 없습니다.")
             return None, None, None
 
-        # 자동 컬럼 추론 로직
+        # 자동 컬럼 추론
         author_col_candidates = [col for col in text_columns if '이름' in col]
         question_col_candidates = [col for col in text_columns if 'CEO에게 어떤 질문을 하고 싶으신가요?' in col]
 
         if len(author_col_candidates) == 1 and len(question_col_candidates) == 1:
-            # 자동으로 author_col, question_col 할당
             author_col = author_col_candidates[0]
             question_col = question_col_candidates[0]
-            #st.success(f"자동으로 작성자 컬럼: {author_col}, 질문 컬럼: {question_col} 을 선택했습니다.")
         else:
-            # 자동 추론 실패 시 사용자에게 선택 옵션 제공
-            st.info("자동 컬럼 추론에 실패했습니다. 컬럼을 직접 선택해주세요.")
             author_col = st.selectbox(
                 "작성자(이름) 컬럼을 선택하세요:",
-                options=["(없음)"] + text_columns,
-                help="작성자 정보를 포함한 컬럼을 선택하거나 없으면 (없음)을 선택하세요."
+                options=["(없음)"] + text_columns
             )
             question_col = st.selectbox(
-                "질문(텍스트) 컬럼을 선택하세요:",
-                options=text_columns,
-                help="실제 분석할 질문 텍스트가 들어 있는 컬럼을 선택하세요."
+                "질문 컬럼을 선택하세요:",
+                options=text_columns
             )
 
-            if question_col is None:
-                st.info("질문 컬럼을 선택해주세요.")
-                return None, None, None
-
-        # data_list 생성: 각 행에 대해 {"author": ..., "question": ...} 형태
+        # 데이터 리스트 생성
         data_list = []
         for idx, row in df.iterrows():
             author = row[author_col] if author_col != "(없음)" else ""
@@ -535,1265 +146,296 @@ def analyze_uploaded_file(file):
                 "question": str(question_text)
             })
 
-        # 분석용 text_data: 질문 컬럼(question_col) 데이터만 합침
-        question_texts = df[question_col].dropna().astype(str).tolist()
-        text_data = '\n'.join(question_texts)
-        # data_list와 df를 반환
-        return (text_data, data_list, df)
+        # 분석용 텍스트 데이터
+        text_data = '\n'.join(df[question_col].dropna().astype(str).tolist())
+        return text_data, data_list, df
 
     except Exception as e:
         st.error(f"파일 처리 중 오류가 발생했습니다: {str(e)}")
-        import traceback
-        st.write("상세 오류:", traceback.format_exc())
         return None, None, None
 
-
-
-
-
-def generate_wordcloud_from_keywords(keyword_data):
-    """키워드 데이터를 기반으로 워드클라우드 생성 (한글 지원, 불용어 처리)"""
+def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
+    """텍스트 분석 및 응답 생성"""
     try:
-        # 불용어 정의
-        stopwords = {
-            '신한카드','궁금합니다'
-        }
-        # 프로젝트 내의 폰트 파일 경로 지정
-        font_path = "fonts/NanumGothic.ttf"  # 폰트 파일을 프로젝트의 fonts 디렉토리에 저장
-        
-        if not os.path.exists(font_path):
-            st.error("한글 폰트 파일이 없습니다. fonts/NanumGothic.ttf 파일을 확인해주세요.")
-            return
-        
+        # 실제 데이터 계산
+        unique_authors = set(item["author"] for item in data_list if item["author"])
+        total_questions = len(data_list)
+        author_count = len(unique_authors)
+        authors_list = sorted(list(unique_authors))
 
-        # 불용어 필터링을 위한 데이터 전처리
-        filtered_data = {
-            word: freq for word, freq in keyword_data.items()
-            if word not in stopwords
-        }
+        # 분석 요청인지 확인
+        is_analysis_request = any(keyword in text_query.lower() for keyword in [
+            '카테고리', '분류', '분포', '비율', '통계', '분석', '카테고리화'
+        ])
 
-        if not filtered_data:
-            st.error("불용어 제거 후 표시할 데이터가 없습니다.")
-            return
+        # 프롬프트 설정
+        if is_analysis_request:
+            prompt = f"""
+            신한카드 신입사원들의 총 {total_questions}개의 질문을 정확히 5개의 카테고리로 분류해주세요.
+            반드시 아래 JSON 형식으로 작성해주세요.
 
-        # 워드클라우드 생성
-        wordcloud = WordCloud(
-            font_path=font_path,
-            width=800,
-            height=400,
-            background_color="white",
-            max_words=100,  # 최대 표시 단어 수
-            min_font_size=10,  # 최소 폰트 크기
-            relative_scaling=0.5  # 빈도 차이에 따른 크기 차이 조절
-        ).generate_from_frequencies(filtered_data)
+            데이터:
+            {json.dumps(data_list, ensure_ascii=False)}
 
-        plt.figure(figsize=(10, 5))
-        plt.imshow(wordcloud, interpolation="bilinear")
-        plt.axis("off")
-        st.pyplot(plt)
+            다음과 같은 JSON 형식으로 정확하게 반환해주세요:
+            {{
+                "answer": "신입사원들의 질문을 5개 카테고리로 분석한 결과입니다.",
+                "categories": [
+                    {{
+                        "category": "카테고리1",
+                        "count": 20,
+                        "percentage": 20.0
+                    }},
+                    {{
+                        "category": "카테고리2",
+                        "count": 30,
+                        "percentage": 30.0
+                    }},
+                    {{
+                        "category": "카테고리3",
+                        "count": 25,
+                        "percentage": 25.0
+                    }},
+                    {{
+                        "category": "카테고리4",
+                        "count": 15,
+                        "percentage": 15.0
+                    }},
+                    {{
+                        "category": "카테고리5",
+                        "count": 10,
+                        "percentage": 10.0
+                    }}
+                ]
+            }}
 
-    except Exception as e:
-        st.error(f"워드클라우드 생성 중 오류 발생: {e}")
-
-
-
-def analyze_text(text_data, response_data=None):
-    """텍스트 데이터를 분석하여 차트로 시각화"""
-    # 키워드 빈도 분석 (텍스트 데이터로부터 생성)
-    if text_data:
-        word_list = text_data.split()
-        word_freq = pd.Series(word_list).value_counts().head(10)
-        freq_df = pd.DataFrame({"keyword": word_freq.index, "count": word_freq.values})
-    elif response_data and "keyword_frequency" in response_data:
-        freq_df = pd.DataFrame(response_data["keyword_frequency"])
-    else:
-        st.error("텍스트 데이터 또는 키워드 빈도 데이터를 찾을 수 없습니다.")
-        return
-
-    # 감성 분석 데이터
-    if response_data and "sentiment_analysis" in response_data:
-        sentiment_data = response_data["sentiment_analysis"]
-    else:
-        sentiment_data = {"positive_score": 70, "negative_score": 20, "neutral_score": 10}
-
-    total_score = sum(sentiment_data.values())
-    normalized_score = (sentiment_data["positive_score"] / total_score) * 100
-
-    # 주제 분포 데이터
-    if response_data and "topic_distribution" in response_data:
-        topic_distribution = pd.DataFrame(response_data["topic_distribution"])
-    else:
-        topic_distribution = pd.DataFrame({
-            "topic": ["주제1", "주제2", "주제3"],
-            "percentage": [40, 30, 30]
-        })
-
-    # 결과 시각화
-    st.markdown("### 📊 분석 결과")
-    
-    # 워드클라우드 생성
-    st.markdown("#### 주요 키워드 워드클라우드")
-    generate_wordcloud_from_keywords(freq_df.to_dict("records"))
-
-    # 키워드 빈도수 차트
-    st.markdown("#### 주요 키워드 분석")
-    fig_freq = px.bar(freq_df, x="keyword", y="count", title="주요 키워드 Top 10")
-    st.plotly_chart(fig_freq, use_container_width=True)
-    
-    # 감성 분석 게이지
-    st.markdown("#### 감성 분석")
-    fig_sentiment = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=normalized_score,
-        title={'text': "긍정도 지수"},
-        gauge={
-            'axis': {'range': [0, 100]},
-            'steps': [
-                {'range': [0, 50], 'color': "lightgray"},
-                {'range': [50, 100], 'color': "lightblue"}
-            ]
-        }
-    ))
-    st.plotly_chart(fig_sentiment, use_container_width=True)
-    
-    # 주제 분포 파이 차트
-    st.markdown("#### 주제 분포")
-    fig_topic = px.pie(topic_distribution, values="percentage", names="topic", title="주제 분포")
-    st.plotly_chart(fig_topic, use_container_width=True)
-    
-
-def analyze_text_with_context(text_query: str, file_data: str, data_list: list, chat_history: list, search_system) -> dict:
-    try:
-        # 질문 유형 분석
-        query_type = analyze_query_type(text_query, search_system.client)
-        
-        # 파일 데이터 길이 제한 (모델의 토큰 제한 고려)
-        shortened_file_data = file_data[:2000]  # 필요에 따라 조정
-
-        # data_list를 JSON으로 변환 (작성자와 질문 목록)
-        data_list_json = json.dumps(data_list, ensure_ascii=False)
-
-        # 기본 프롬프트 생성
-        # data_list(작성자/질문 리스트)와 shortened_file_data(질문 텍스트) 모두 프롬프트에 제공
-        # LLM에게 "작성자가 누구인지" 물어보면 data_list를 사용해 답변할 수 있고,
-        # 키워드 분석/감성 분석 등은 text_data(질문만 포함)로 처리
-        prompt = f"""
-        아래는 분석할 데이터입니다:
-        데이터 목록(JSON): 
-        {data_list_json}
-
-        질문 텍스트(분석용): 
-        {shortened_file_data}
-
-        이전 대화:
-        {format_chat_history(chat_history)}
-
-        사용자 질문:
-        {text_query}
-
-        이 데이터는 "author" 필드에 작성자, "question" 필드에 질문 텍스트가 들어있습니다.
-        키워드, 감성, 주제분석 등은 "question" 필드의 텍스트만 기반으로 하세요.
-        
-        중요 규칙:
-        1. "누가 이 질문을 썼어요?" 같은 질문이 나오면 반드시 data_list를 정확히 검색하여 author를 확인하세요.
-        2. data_list에서 정확히 일치하는 내용을 찾지 못한 경우 "해당 정보를 찾을 수 없습니다"라고 답변하세요.
-        3. 절대로 추측하거나 유추하지 마세요.
-        4. 분석 결과(JSON)에는 author 정보나 이름은 포함하지 마세요.
-        5. 추측하지 말고, data_list에 근거를 두고 답하라.
-        
-        답변 전에 반드시 data_list를 검색하여 정확한 정보만 제공하세요.
-        """
-
-        if query_type == 'data_analysis':
-            # 질문에서 원하는 분석 종류 파악
-            requested_analysis = determine_requested_analysis(text_query)
-
-            analysis_instructions = ""
-            if 'keyword_frequency' in requested_analysis:
-                analysis_instructions += "1. 키워드 빈도수 분석을 수행하고, 결과를 'keyword_frequency' 키에 JSON 배열로 반환하세요.\n"
-            if 'sentiment_analysis' in requested_analysis:
-                analysis_instructions += "2. 감성 분석을 수행하고, 결과를 'sentiment_analysis' 키에 JSON 객체로 반환하세요.\n"
-            if 'topic_distribution' in requested_analysis:
-                analysis_instructions += "3. 주제 분포 분석을 수행하고, 결과를 'topic_distribution' 키에 JSON 배열로 반환하세요.\n"
-
-            if not analysis_instructions:
-                analysis_instructions = "사용자의 질문에 답하세요. 단, 분석 결과에 author 필드를 포함하지 마세요."
-            else:
-                # 결과를 반드시 정확한 JSON 형식으로만 반환하도록 지시
-                analysis_instructions += "\n\n**중요**: 결과를 반드시 정확한 JSON 형식으로만 반환하고, 그 외의 텍스트는 일절 포함하지 마세요."
-
-            # 프롬프트에 분석 지시사항 추가
-            prompt += f"\n{analysis_instructions}"
-
-            # LLM 호출
-            response = search_system.client.chat.completions.create(
+            규칙:
+            1. 반드시 위의 JSON 형식을 정확히 따라주세요
+            2. answer는 한 문장으로 작성해주세요
+            3. count는 각 카테고리에 속한 질문의 개수입니다
+            4. percentage는 전체 질문 중 해당 카테고리가 차지하는 비율입니다
+            5. 모든 카테고리의 count 합은 {total_questions}이어야 합니다
+            6. 모든 카테고리의 percentage 합은 100.0이어야 합니다
+            7. JSON 형식 외의 다른 텍스트는 포함하지 마세요
+            """
+            
+            # 분석 요청은 스트리밍 없이 처리
+            response = st.session_state.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "당신은 텍스트 분석 전문가입니다."},
+                    {"role": "system", "content": "당신은 데이터 분석 전문가입니다."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.0
+                temperature=0.0,
+                stream=False
             )
+            
+            try:
+                result = json.loads(response.choices[0].message.content)
+                
+                # 분석 결과 텍스트 조합
+                response_text = f"### 분석 결과\n{result['answer']}\n\n#### 카테고리별 분포\n"
+                for category in result["categories"]:
+                    response_text += f"- **{category['category']}**: {category['count']}개 ({category['percentage']}%)\n"
 
-            raw_response = response.choices[0].message.content
+                # 파이 차트 생성
+                if "categories" in result:
+                    df = pd.DataFrame(result["categories"])
+                    fig = px.pie(
+                        df, 
+                        values='percentage', 
+                        names='category',
+                        title='질문 카테고리 분포',
+                        color_discrete_sequence=px.colors.qualitative.Set3
+                    )
+                    fig.update_traces(textposition='inside', textinfo='percent+label')
+                    
+                    # 차트를 이미지로 변환하여 base64 인코딩
+                    chart_bytes = fig.to_image(format="png")
+                    chart_base64 = base64.b64encode(chart_bytes).decode("utf-8")
+                    
+                    # Streamlit에 차트 표시
+                    st.markdown(f"![카테고리 분포 차트](data:image/png;base64,{chart_base64})", unsafe_allow_html=True)
+                else:
+                    chart_base64 = None
 
-            import re
-            json_match = re.search(r'\{.*\}', raw_response, re.DOTALL)
-            if json_match:
-                json_content = json_match.group(0)
-                try:
-                    analysis_results = json.loads(json_content)
-                    return {
-                        "query_type": query_type,
-                        "answer": "",  # 분석 요청이므로 answer는 빈 문자열
-                        "analysis": analysis_results
-                    }
-                except json.JSONDecodeError as e:
-                    st.error("JSON 파싱 오류가 발생했습니다.")
-                    st.write("LLM 응답:", raw_response)
-                    return None
-            else:
-                st.error("LLM 응답에서 JSON 데이터를 찾을 수 없습니다.")
-                st.write("LLM 응답:", raw_response)
+                # 답변 표시 및 히스토리에 저장
+                st.markdown(response_text, unsafe_allow_html=True)
+                save_message(response_text, "assistant", image_base64=chart_base64)
+                
+                return result['answer']
+                
+            except json.JSONDecodeError as e:
+                st.error(f"JSON 파싱 중 오류가 발생했습니다: {str(e)}")
                 return None
+
         else:
-            # 일반 질문 처리
-            response = search_system.client.chat.completions.create(
+            # 일반 질문일 경우
+            prompt = f"""
+            당신은 신한카드 CEO와 신입사원들 간의 소통을 돕는 AI 어시스턴트입니다.
+            
+            기초 데이터 (반드시 아래 수치를 사용해주세요):
+            - 총 질문 수: {total_questions}개
+            - 총 작성자 수: {author_count}명
+            - 작성자 목록: {', '.join(authors_list)}
+
+            데이터:
+            {json.dumps(data_list, ensure_ascii=False)}
+
+            질문: {text_query}
+
+            규칙:
+            1. 신입사원들의 질문 내용을 기반으로 정확하게 답변하세요
+            2. 질문의 내용과 맥락에 맞게 적절한 수준으로 답변하세요.
+            3. 통계나 수치는 질문할 때만 답변하세요
+            4. 숫자 관련 답변시 반드시 기초 데이터의 정확한 수치를 사용하세요
+            5. 데이터에 없는 내용은 절대 추측하지 마세요
+            """
+            
+            # 일반 질문은 스트리밍으로 처리
+            response = st.session_state.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "당신은 텍스트 분석 전문가이자 친절한 AI 어시스턴트입니다."},
+                    {"role": "system", "content": "당신은 데이터 분석 전문가입니다."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.0
+                temperature=0.0,
+                stream=True
             )
+            
+            # 스트리밍 응답 처리
+            full_response = ""
+            message_placeholder = st.empty()
+            
+            try:
+                for chunk in response:
+                    if chunk and hasattr(chunk.choices[0].delta, 'content') and chunk.choices[0].delta.content:
+                        content = chunk.choices[0].delta.content
+                        full_response += content
+                        message_placeholder.markdown(full_response + "▌")
+                
+                # 최종 응답 설정
+                message_placeholder.empty()
+                return full_response
+                
+            except Exception as e:
+                st.error(f"스트리밍 처리 중 오류가 발생했습니다: {str(e)}")
+                return None
 
-            return response.choices[0].message.content
-        
     except Exception as e:
         st.error(f"분석 중 오류가 발생했습니다: {str(e)}")
         return None
 
-
-
-
-
-
-def analyze_query_type(query: str, client) -> str:
-    """사용자 쿼리의 유형을 분석하여 'data_analysis' 또는 'text_query'로 분류"""
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "당신은 질문을 'data_analysis' 또는 'text_query' 중 하나로 분류하는 전문가입니다. 질문이 데이터 파일의 내용을 기반으로 답변해야 하면 'data_analysis'로 분류하세요."},
-                {"role": "user", "content": f"질문: '{query}'\n\n질문의 유형을 'data_analysis' 또는 'text_query'로만 답변해주세요."}
-            ],
-            temperature=0
-        )
-        result = response.choices[0].message.content.strip().lower()
-        if 'data_analysis' in result:
-            return 'data_analysis'
-        else:
-            return 'text_query'
-    except Exception:
-        return 'text_query'  # 기본값으로 'text_query' 반환
-
-
-        
-# 사이드바에서 텍스트 분석 챗봇 모드 추가
-def create_sidebar_with_text_analysis():
-    """사이드바에서 텍스트 분석 챗봇 모드를 추가합니다."""
-    with st.sidebar:
-        st.markdown("### 🤖 챗봇 모드 선택")
-        
-        # 모드 선택
-        mode = st.radio(
-            "원하시는 모드를 선택하세요:",
-            ["기본 챗봇", "텍스트 분석 챗봇"],
-            index=0,
-            key="chat_mode_sidebar"  # 고유 키로 변경
-        )
-        
-        # 세션 상태 업데이트
-        st.session_state.analysis_mode = (mode == "텍스트 분석 챗봇")
-
-
-def format_analysis_results(analysis_results):
-    """분석 결과를 대화 이력에 저장하기 위한 포맷으로 변환"""
-    formatted_result = "### 📊 텍스트 분석 결과\n\n"
-    
-    # 키워드 빈도수 포맷팅
-    if 'keyword_frequency' in analysis_results:
-        formatted_result += "#### 주요 키워드 분석\n"
-        for keyword in analysis_results['keyword_frequency']:
-            formatted_result += f"- {keyword['keyword']}: {keyword['count']}회\n"
-        formatted_result += "\n"
-    
-    # 주제 분포 포맷팅
-    if 'topic_distribution' in analysis_results:
-        formatted_result += "#### 주제 분포\n"
-        for topic in analysis_results['topic_distribution']:
-            formatted_result += f"- {topic['topic']}: {topic['percentage']}%\n"
-        formatted_result += "\n"
-    
-    # 감성 분석 포맷팅
-    if 'sentiment_analysis' in analysis_results:
-        sentiment = analysis_results['sentiment_analysis']
-        total_score = sum(sentiment.values())
-        formatted_result += "#### 감성 분석\n"
-        formatted_result += f"- 긍정: {(sentiment['positive_score']/total_score)*100:.1f}%\n"
-        formatted_result += f"- 부정: {(sentiment['negative_score']/total_score)*100:.1f}%\n"
-        formatted_result += f"- 중립: {(sentiment['neutral_score']/total_score)*100:.1f}%\n\n"
-    
-    # 주요 인사이트 포맷팅
-    if 'key_insights' in analysis_results:
-        formatted_result += "#### 주요 인사이트\n"
-        for insight in analysis_results['key_insights']:
-            formatted_result += f"- {insight}\n"
-    
-    return formatted_result
-
-def save_analysis_to_history(st_state, analysis_results, uploaded_filename):
-    """분석 결과와 차트를 대화 이력에 저장"""
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    
-    # 분석 결과 데이터 저장
-    analysis_entry = {
-        'timestamp': timestamp,
-        'filename': uploaded_filename,
-        'results': analysis_results,
-        'type': 'analysis'  # 메시지 타입을 분석으로 표시
-    }
-    
-    # 대화 이력에 저장
-    if 'messages' not in st_state:
-        st_state.messages = []
-    st_state.messages.append({
-        "message": analysis_entry,
-        "role": "ai",
-        "type": "analysis"  # 분석 타입 메시지임을 표시
+def save_message(message, role, image_base64=None):
+    """메시지 저장"""
+    st.session_state.messages.append({
+        "message": message,
+        "role": role,
+        "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        "image": image_base64  # 이미지 데이터 추가
     })
-    
-    # 검색 이력에도 저장
-    if 'search_history' not in st_state:
-        st_state.search_history = []
-    st_state.search_history.append(analysis_entry)
 
-
-def display_analysis_results(analysis_results, requested_analysis=None):
-    """분석 결과를 차트와 함께 표시"""
-    if requested_analysis is None:
-        requested_analysis = ['keyword_frequency', 'sentiment_analysis', 'topic_distribution']
+def send_message(message, role, image_base64=None, is_history=False):
+    """메시지 표시"""
     try:
-        st.markdown("### 📊 분석 결과")
-
-        # 키워드 빈도수 분석 (워드클라우드로 변경)
-        if 'keyword_frequency' in requested_analysis and 'keyword_frequency' in analysis_results:
-            st.markdown("#### 주요 키워드 분석")
-            keyword_data = analysis_results['keyword_frequency']
-            if isinstance(keyword_data, list) and len(keyword_data) > 0:
-                # frequency를 count로 변환하여 워드클라우드 데이터 생성
-                wordcloud_data = {}
-                for item in keyword_data:
-                    # frequency 또는 count 키가 있는 경우 모두 처리
-                    value = item.get('frequency', item.get('count', 0))
-                    wordcloud_data[item['keyword']] = value
-                
-                if wordcloud_data:
-                    generate_wordcloud_from_keywords(wordcloud_data)
+        # role에 따른 이미지 파일명 매핑
+        image_filename = 'human_character.png' if role == 'human' else 'bot_character.png'
+        avatar_path = os.path.join(ASSETS_DIR, image_filename)
+        
+        # 이미지 파일이 존재하는 경우에만 아바타 사용
+        if os.path.exists(avatar_path):
+            with st.chat_message(role, avatar=avatar_path):
+                if role == "assistant" and not is_history:  # 히스토리가 아닐 때만 스트리밍 효과 적용
+                    # 스트리밍 효과를 위한 점진적 표시
+                    placeholder = st.empty()
+                    displayed_message = ""
+                    for char in message:
+                        displayed_message += char
+                        placeholder.markdown(displayed_message + "▌")
+                        time.sleep(0.01)
+                    placeholder.markdown(displayed_message)
                 else:
-                    st.error("워드클라우드를 생성할 데이터가 없습니다.")
-
-
-        # 감성 분석
-        if 'sentiment_analysis' in requested_analysis and 'sentiment_analysis' in analysis_results:
-            st.markdown("#### 감성 분석")
-            try:
-                sentiment = analysis_results['sentiment_analysis']
-                # 키 이름 변환
-                if 'positive' in sentiment:
-                    sentiment['positive_score'] = sentiment.pop('positive')
-                if 'negative' in sentiment:
-                    sentiment['negative_score'] = sentiment.pop('negative')
-                if 'neutral' in sentiment:
-                    sentiment['neutral_score'] = sentiment.pop('neutral')
-
-                total_score = sum(sentiment.values())
-                if total_score > 0:
-                    positive_ratio = (sentiment.get('positive_score', 0) / total_score) * 100
-                    fig_sentiment = go.Figure(go.Indicator(
-                        mode="gauge+number",
-                        value=positive_ratio,
-                        title={'text': "긍정도 비율"},
-                        gauge={
-                            'axis': {'range': [0, 100]},
-                            'steps': [
-                                {'range': [0, 50], 'color': "lightgray"},
-                                {'range': [50, 100], 'color': "lightblue"}
-                            ]
-                        }
-                    ))
-                    st.plotly_chart(fig_sentiment, use_container_width=True)
+                    st.markdown(message, unsafe_allow_html=True)
+                if image_base64:
+                    st.markdown(f"![차트](data:image/png;base64,{image_base64})", unsafe_allow_html=True)
+        else:
+            with st.chat_message(role):
+                if role == "assistant" and not is_history:  # 히스토리가 아닐 때만 스트리밍 효과 적용
+                    placeholder = st.empty()
+                    displayed_message = ""
+                    for char in message:
+                        displayed_message += char
+                        placeholder.markdown(displayed_message + "▌")
+                        time.sleep(0.01)
+                    placeholder.markdown(displayed_message)
                 else:
-                    st.error("감성 분석 결과의 총 점수가 0입니다.")
-            except Exception as e:
-                st.error("감성 분석 차트를 생성하는 중 오류가 발생했습니다.")
-                print(f"감성 분석 차트 생성 중 오류 발생: {e}")
-                print("감성 분석 데이터:", sentiment)
-
-        # 주제 분포 분석
-        if 'topic_distribution' in requested_analysis and 'topic_distribution' in analysis_results and analysis_results['topic_distribution']:
-            st.markdown("#### 주제 분포")
-            try:
-                topic_data = analysis_results['topic_distribution']
-                if isinstance(topic_data, list) and len(topic_data) > 0:
-                    # 'count' 키가 없으면 'frequency' 키를 'count'로 변경
-                    for item in topic_data:
-                        if 'frequency' in item:
-                            item['count'] = item.pop('frequency')
-                    topic_df = pd.DataFrame(topic_data)
-                    # 'percentage' 계산
-                    if 'count' in topic_df.columns:
-                        total_count = topic_df['count'].sum()
-                        topic_df['percentage'] = (topic_df['count'] / total_count) * 100
-                    elif 'percentage' not in topic_df.columns:
-                        st.error("주제 분포 데이터에 'count' 또는 'percentage' 값이 없습니다.")
-                        return
-                    # 차트 생성
-                    if not topic_df.empty and 'topic' in topic_df.columns and 'percentage' in topic_df.columns:
-                        fig_topic = px.pie(topic_df, values='percentage', names='topic', title="주제별 분포")
-                        st.plotly_chart(fig_topic, use_container_width=True)
-                    else:
-                        st.error("주제 분포 데이터에 필요한 열이 없습니다.")
-                else:
-                    st.error("주제 분포 데이터가 유효하지 않습니다.")
-            except Exception as e:
-                st.error("주제 분포 차트를 생성하는 중 오류가 발생했습니다.")
-                print(f"주제 분포 차트 생성 중 오류 발생: {e}")
-                print("주제 분포 데이터:", topic_df)
-
-        # 주요 인사이트 표시 (필요 시)
-        if 'key_insights' in analysis_results:
-            st.markdown("#### 주요 인사이트")
-            insights = analysis_results['key_insights']
-            if isinstance(insights, list):
-                for insight in insights:
-                    st.markdown(f"- {insight}")
-
+                    st.markdown(message, unsafe_allow_html=True)
+                if image_base64:
+                    st.markdown(f"![차트](data:image/png;base64,{image_base64})", unsafe_allow_html=True)
+                    
     except Exception as e:
-        st.error("분석 결과를 표시하는 중 오류가 발생했습니다.")
-        print(f"분석 결과 표시 중 오류 발생: {str(e)}")
-        print("분석 결과 데이터:", analysis_results)
+        print(f"Avatar loading error: {str(e)}")
+        with st.chat_message(role):
+            st.markdown(message, unsafe_allow_html=True)
+            if image_base64:
+                st.markdown(f"![차트](data:image/png;base64,{image_base64})", unsafe_allow_html=True)
 
+def main():
+    initialize_session_state()
 
+    # 사이드바
+    with st.sidebar:
+        st.markdown("### 🎯 사용 가이드")
+        st.markdown("""
+        1. 분석할 파일을 업로드하세요
+        2. 원하는 질문을 입력하세요
+        3. AI가 파일을 분석하여 답변해드립니다
+        """)
 
-def format_chat_history(history):
-    """채팅 이력을 문자열로 포맷팅"""
-    formatted = []
-    for item in history:
-        if isinstance(item, dict):
-            role = item.get('role', '')
-            message = item.get('message', '')
-            formatted.append(f"{role}: {message}")
-    return "\n".join(formatted)
-
-
-def display_combined_analysis(result):
-    if not result:
-        return
-
-    # 답변 표시
-    st.markdown("### 💬 답변")
-    st.markdown(result["answer"])
-
-    # 분석 결과가 있는 경우 차트 표시
-    if result.get("query_type") == "data_analysis" and result.get("analysis"):
-        st.markdown("### 📊 분석 결과")
-        analysis_results = result["analysis"]
-
-        # 키워드 빈도수 차트
-        if 'keyword_frequency' in analysis_results:
-            st.markdown("#### 주요 키워드 분석")
-            keyword_data = analysis_results['keyword_frequency']
-            if isinstance(keyword_data, list) and len(keyword_data) > 0:
-                keyword_df = pd.DataFrame(keyword_data)
-                fig = px.bar(keyword_df, x="keyword", y="count", 
-                            title="키워드 빈도수",
-                            labels={"count": "출현 횟수", "keyword": "키워드"})
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("키워드 빈도수 데이터가 없습니다.")
-        
-        # 주제 분포 파이 차트
-        if 'topic_distribution' in analysis_results:
-            st.markdown("#### 주제 분포")
-            topic_data = analysis_results['topic_distribution']
-            if isinstance(topic_data, list) and len(topic_data) > 0:
-                topic_df = pd.DataFrame(topic_data)
-                # 'percentage' 계산
-                if 'questions' in topic_df.columns:
-                    topic_df['question_count'] = topic_df['questions'].apply(len)
-                    total_questions = topic_df['question_count'].sum()
-                    topic_df['percentage'] = (topic_df['question_count'] / total_questions) * 100
-                else:
-                    st.error("주제 분포 데이터에 'questions' 정보가 없습니다.")
-                    return
-
-                fig = px.pie(topic_df, values="percentage", names="topic", 
-                            title="주제별 분포")
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("주제 분포 데이터가 없습니다.")
-        
-        ## 감성 분석 게이지
-        if 'sentiment_analysis' in analysis_results:
-            st.markdown("#### 감성 분석")
-            sentiment_data = analysis_results['sentiment_analysis']
-            if isinstance(sentiment_data, list) and len(sentiment_data) > 0:
-                # 각 감정의 개수 계산
-                sentiment_counts = pd.DataFrame(sentiment_data)['sentiment'].value_counts().to_dict()
-                total_count = sum(sentiment_counts.values())
-                positive_ratio = (sentiment_counts.get('긍정', 0) / total_count) * 100
-
-                fig = go.Figure(go.Indicator(
-                    mode="gauge+number",
-                    value=positive_ratio,
-                    title={'text': "긍정도 비율"},
-                    gauge={
-                        'axis': {'range': [0, 100]},
-                        'steps': [
-                            {'range': [0, 50], 'color': "lightgray"},
-                            {'range': [50, 100], 'color': "lightblue"}
-                        ]
-                    }
-                ))
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("감성 분석 데이터가 없습니다.")
-        
-        # 주요 인사이트
-        if 'key_insights' in analysis_results:
-            st.markdown("#### 주요 인사이트")
-            for insight in analysis_results['key_insights']:
-                st.markdown(f"- {insight}")
-
-
-def main_analysis_chat():
-    """텍스트 분석 챗봇 메인 함수"""
-    st.markdown("### 📂 파일 업로드")
-    uploaded_file = st.file_uploader("분석할 텍스트 파일을 업로드하세요 (CSV 또는 XLSX)", 
-                                   type=["csv", "xlsx"])
+    # 파일 업로드
+    uploaded_file = st.file_uploader("분석할 파일을 업로드하세요 (CSV 또는 XLSX)", type=["csv", "xlsx"])
     
-    # 파일 업로드 및 초기 분석
-    if uploaded_file and "file_data" not in st.session_state:
+    if uploaded_file:
         file_analysis_result = analyze_uploaded_file(uploaded_file)
         if file_analysis_result:
             text_data, data_list, df = file_analysis_result
             st.success("파일이 성공적으로 업로드되었습니다.")
             st.session_state.file_data = text_data
-            st.session_state.data_list = data_list  # data_list도 session_state에 저장
-            st.session_state.file_df = df
-    
-        # 채팅 인터페이스
-    if st.session_state.analysis_mode and "file_data" in st.session_state:
-        # 텍스트 분석 챗봇 모드
-        query = st.chat_input("분석 모드에서 질문을 입력하세요", key="analysis_input")
-        if query:
-            st.session_state.analysis_history.append({"role": "user", "content": query})
-            send_message(query, "human")  # 사용자 메시지 출력
-            with st.spinner("분석 중..."):
-                result = analyze_text_with_context(
-                    text_query=query,
-                    file_data=st.session_state.file_data,
-                    chat_history=st.session_state.messages,
-                    search_system=st.session_state.search_system,
-                    data_list=st.session_state.data_list
-                )
-                with st.chat_message("ai", avatar="static/bot_character.png"):
-                    display_combined_analysis(result)
-                save_message(result.get("answer", ""), "ai")  # 분석 결과 저장
-
-        # 입력값 처리
-        if query:
-            save_message(query, "user")  # 히스토리 저장 자동화
-            send_message(query, "human")  # 사용자 메시지 표시
-
-            # 모드별 처리
-            if st.session_state.analysis_mode:
-                main_analysis_chat()  # 분석 모드
-            else:
-                process_regular_chat(query, progress_bar=None)  # 일반 모드
-
-
-            
-            # 분석 수행
-            with st.spinner("분석 중..."):
-                result = analyze_text_with_context(
-                    text_query=query,
-                    file_data=st.session_state.file_data,
-                    chat_history=st.session_state.messages,
-                    search_system=st.session_state.search_system,
-                    data_list=st.session_state.data_list
-                )
-                
-                # 분석 결과 표시
-                with st.chat_message("ai", avatar="static/bot_character.png"):
-                    display_combined_analysis(result)
-                
-                # 대화 이력 저장
-                save_message(result.get("answer", ""), "ai")
-    else:
-        st.info("파일을 업로드하면 대화를 시작할 수 있습니다.")
-            
-
-# Initialize session state with unified history
-def initialize_session_state():
-    if 'initialized' not in st.session_state:
-        st.session_state.messages = []  # Unified message history
-        st.session_state.search_history = []  # Unified search history
-        st.session_state.file_data = None
-        st.session_state.file_df = None
-        st.session_state.tts_enabled = True
-        st.session_state.audio_played = False
-        st.session_state.query = None  # query 초기화 추가
-        st.session_state.search_system = StreamlitNewsSearchSystem(
-            naver_client_id=naver_client_id,
-            naver_client_secret=naver_client_secret,
-            llm_api_key=llm_api_key,
-            xi_api_key=xi_api_key,
-            voice_id=voice_id
-        )
-        st.session_state.analysis_mode = False
-        st.session_state.initialized = True
-
-# 초기화 함수를 스크립트 초기에 실행
-initialize_session_state()
-    
-        
-# 캐릭터 이미지 경로
-user_img = "static/human_character.png"  # 사용자 캐릭터 이미지 파일 경로
-bot_img = "static/bot_character.png"  # 챗봇 캐릭터 이미지 파일 경로
-
-if not Path(user_img).exists():
-    raise FileNotFoundError(f"File not found: {user_img}")
-
-# 메시지를 이미지와 함께 출력하는 함수
-def send_message_with_image(message, role, image_path, save=True):
-    """이미지를 포함하여 메시지를 표시"""
-    message_html = f"""
-    <div style="display: flex; align-items: flex-start; margin-bottom: 10px;">
-        <img src="{image_path}" alt="{role}" style="width: 50px; height: 50px; margin-right: 10px; border-radius: 50%;">
-        <div style="background-color: #f1f1f1; padding: 10px; border-radius: 10px; max-width: 80%;">
-            {message}
-        </div>
-    </div>
-    """
-    st.markdown(message_html, unsafe_allow_html=True)
-    if save:
-        save_message(message, role)
-
-# 메시지 기록 표시 함수
-def paint_history():
-    """대화 이력 표시"""
-    if "messages" in st.session_state:
-        for message in st.session_state.messages:
-            if isinstance(message, dict):
-                role = message.get("role", "")
-                content = message.get("message", "")
-                
-                # 메시지 타입에 따른 처리
-                if message.get("type") == "analysis":
-                    # st.chat_message 내부에서는 텍스트 메시지만 표시
-                    if isinstance(content, dict):
-                        # 답변 텍스트 표시
-                        if "answer" in content and content["answer"]:
-                            send_message(content["answer"], role, save=False)
-                        # 분석 결과 표시 (st.chat_message 바깥에서)
-                        if "analysis" in content and content["analysis"]:
-                            # 이전에 요청된 분석 종류를 복원하거나 기본값 설정
-                            requested_analysis = determine_requested_analysis(content.get("answer", ""))
-                            display_analysis_results(content["analysis"], requested_analysis)
-                    else:
-                        # 일반 텍스트로 메시지 표시
-                        send_message(content, role, save=False)
-                else:
-                    # 일반 채팅 메시지 표시
-                    send_message(content, role, save=False)
-
-
-
-def extract_section(text, start_marker, end_marker=None):
-    """텍스트에서 특정 섹션을 추출하는 함수"""
-    try:
-        if start_marker not in text:
-            return None
-        
-        parts = text.split(start_marker, 1)
-        if len(parts) < 2:
-            return None
-            
-        content = parts[1]
-        
-        if end_marker:
-            if end_marker in content:
-                content = content.split(end_marker)[0]
-        
-        return content.strip()
-    except Exception:
-        return None
-    
-
-def process_regular_chat(query, progress_bar):
-    """기존 챗봇 모드 처리"""
-    try:
-        if 'audio_played' in st.session_state:
-            del st.session_state.audio_played
-            
-        keywords = st.session_state.search_system.extract_keywords(query, progress_bar)
-        news_items = st.session_state.search_system.search_with_progressive_keywords(
-            keywords, progress_bar
-        )
-        
-        if not news_items:
-            alt_response = st.session_state.search_system.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "당신은 신한카드의 CEO 문동권 사장입니다..."},
-                    {"role": "user", "content": query}
-                ],
-                temperature=0.7
-            ).choices[0].message.content
-
-            st.markdown(f"#### 💬 AI답변\n{alt_response}")
-            save_message(alt_response, "ai")
-            st.session_state.search_history.append({
-                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'query': query,
-                'result': f"💬 AI답변: {alt_response}"
-            })
-            return
-
-        result = st.session_state.search_system.analyze_news_content(
-            news_items, query, progress_bar
-        )
-        
-        if result:
-            st.session_state.current_result = result
-            st.markdown("### 📊 분석 결과")
-            
-            # 각 섹션 추출
-            speech_part = extract_section(result, "[문동권 사장님 말씀]", "[참고 기사]")
-            ref_part = extract_section(result, "[참고 기사]", "[신입사원 가이드]")
-            guide_part = extract_section(result, "[신입사원 가이드]")
-            
-            # 결과 컨테이너
-            with st.container():
-                if ref_part:
-                    st.markdown("#### 📰 참고 기사")
-                    lines = ref_part.split('\n')
-                    formatted_lines = []
-                    for line in lines:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        if "URL:" in line:
-                            url_parts = line.split("URL:")
-                            if len(url_parts) > 1:
-                                url = url_parts[1].strip()
-                                formatted_lines.append(f"- URL: <a href='{url}' target='_blank'>{url}</a>")
-                        else:
-                            formatted_lines.append(f"- {line}")
-                    formatted_ref = '<br>'.join(formatted_lines)
-                    st.markdown(formatted_ref, unsafe_allow_html=True)
-                
-                if guide_part:
-                    st.markdown("#### 🎯 신입사원 가이드")
-                    st.markdown(f"""
-                    <div style='background-color: #e8f4f9; padding: 20px; border-radius: 10px;'>
-                        {guide_part}
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                if speech_part:
-                    st.markdown(f"""
-                    <div style="display: flex; align-items: center; margin-bottom: 10px;">
-                        <img src="data:image/png;base64,{get_image_as_base64('static/bot_character.png')}" 
-                            alt="Bot Icon" 
-                            style="width: 30px; height: 30px; margin-right: 10px; border-radius: 50%;">
-                        <h3 style="margin: 0; display: inline;">AI문동권 사장님 말씀</h3>
-                    </div>
-                    <div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px;">
-                        {speech_part}
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    if st.session_state.tts_enabled and 'audio_played' not in st.session_state:
-                        st.session_state.search_system.speak_result(result)
-                        st.session_state.audio_played = True
-            
-            # 검색 기록 저장
-            formatted_result = f"""### 📊 분석 결과\n\n"""
-            if ref_part:
-                formatted_result += f"""#### 📰 참고 기사\n{formatted_ref}\n\n"""
-            if guide_part:
-                formatted_result += f"""#### 🎯 신입사원 가이드\n{guide_part}\n\n"""
-            if speech_part:
-                formatted_result += f"""#### 💬 문동권 사장님 말씀\n{speech_part}"""
-            
-            # 대화 이력에 한 번만 저장
-            st.session_state.search_history.append({
-                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'query': query,
-                'result': formatted_result
-            })
-            save_message(formatted_result, "ai")
-            return formatted_result
-            
-    except Exception as e:
-        st.error(f"처리 중 오류 발생: {str(e)}")
-        return None
-
-
-def display_bot_section_with_image(title, bot_image_path, content):
-    """아이콘 대신 이미지를 사용하여 섹션을 표시"""
-    st.markdown(f"""
-    <div style="display: flex; align-items: center; margin-bottom: 10px;">
-        <img src="{bot_image_path}" alt="Bot Icon" style="width: 30px; height: 30px; margin-right: 10px; border-radius: 50%;">
-        <h3 style="margin: 0; display: inline;">{title}</h3>
-    </div>
-    <div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px;ƒ">
-        {content}
-    </div>
-    """, unsafe_allow_html=True)
-
-    if uploaded_file:
-        file_analysis_result = analyze_uploaded_file(uploaded_file)
-        if file_analysis_result:  # 유효한 파일만 처리
-            text_data, data_list, df = file_analysis_result
-            st.success("파일이 성공적으로 업로드되었습니다.")
-            st.session_state.file_data = text_data
-            st.session_state.data_list = data_list  # data_list도 session_state에 저장
-            st.session_state.file_df = df
-
-            # 분석 버튼 추가
-            if st.button("분석 시작"):
-                with st.spinner("LLM을 통해 분석 중... 잠시만 기다려주세요."):
-                    # LLM에 텍스트 데이터 전달
-                    llm_prompt = f"""
-                    아래 텍스트 데이터를 분석하고, 결과를 반드시 **JSON으로만** 반환하세요. 
-                    JSON 외의 텍스트는 포함하지 마세요. 반환 값은 문자열이 아니며 JSON 형식이어야 합니다.
-
-                    데이터:
-                    {text_data[:1000]} 
-                    
-                    분석 요구사항:
-                    1. 키워드 빈도수 분석: "keyword_frequency"에 JSON 배열 형태로 반환하세요.
-                    2. 주제 분포: "topic_distribution"에 JSON 배열 형태로 반환하세요.
-                    3. 감성 분석: "sentiment_analysis"에 JSON 객체로 긍정, 부정, 중립 비율을 반환하세요.
-                    4. 주요 인사이트: 질문에서 영감을 얻을만한 것들을 "key_insights"에 JSON 배열로 반환하세요.
-
-                    JSON 형식 예:
-                    {{
-                        "keyword_frequency": [
-                            {{"keyword": "example", "count": 10}},
-                            ...
-                        ],
-                        "topic_distribution": [
-                            {{"topic": "example_topic", "percentage": 50}},
-                            ...
-                        ],
-                        "sentiment_analysis": {{
-                            "positive_score": 60,
-                            "negative_score": 30,
-                            "neutral_score": 10
-                        }},
-                        "key_insights": [
-                            "Insight 1",
-                            "Insight 2"
-                        ]
-                    }}
-"""
-                    try:
-                        response = st.session_state.search_system.client.chat.completions.create(
-                            model="gpt-4o-mini",
-                            messages=[
-                                {"role": "system", "content": "당신은 텍스트 데이터를 분석하고 시각화하는 전문가입니다."},
-                                {"role": "user", "content": llm_prompt}
-                            ],
-                            temperature=0.2
-                        )
-                        
-
-                        # LLM 응답 처리
-                        raw_response = response.choices[0].message.content
-                        analysis_results = json.loads(raw_response)
-
-                        # 결과 시각화 함수 호출
-                        st.markdown("### 📊 분석 결과")
-                        # 실시간 분석 결과 표시
-                        display_analysis_results(analysis_results, uploaded_file.name)
-                        
-                        # 분석 결과를 대화 이력에 저장
-                        save_analysis_to_history(
-                            st_state=st.session_state,
-                            analysis_results=analysis_results,
-                            uploaded_filename=uploaded_file.name
-                        )
-                    
-                        # 저장 완료 메시지
-                        st.success("분석 결과가 대화 이력에 저장되었습니다.")
-
-                    except json.JSONDecodeError as e:
-                        st.error(f"JSON 파싱 오류: {e}")
-                        st.write("LLM 응답 내용:", response.choices[0].message.content)
-                    except Exception as e:
-                        st.error(f"분석 중 오류가 발생했습니다: {e}")
-
-                        # 결과 시각화
-                        st.markdown("### 📊 텍스트 분석 결과")
-
-                        # 키워드 빈도수
-                        st.markdown("#### 주요 키워드 분석")
-                        keyword_df = pd.DataFrame(analysis_results['keyword_frequency'])
-                        keyword_chart = px.bar(keyword_df, x="keyword", y="count", title="키워드 빈도수")
-                        st.plotly_chart(keyword_chart, use_container_width=True)
-
-                        # 주제 분포
-                        st.markdown("#### 주제 분포")
-                        topic_df = pd.DataFrame(analysis_results['topic_distribution'])
-                        topic_chart = px.pie(topic_df, values="percentage", names="topic", title="주제 분포")
-                        st.plotly_chart(topic_chart, use_container_width=True)
-
-                        # 감성 분석
-                        st.markdown("#### 감성 분석")
-                        sentiment = analysis_results['sentiment_analysis']
-                        total_score = sum(sentiment.values())
-                        positive_ratio = (sentiment["positive_score"] / total_score) * 100
-
-                        sentiment_chart = go.Figure(go.Indicator(
-                            mode="gauge+number",
-                            value=positive_ratio,
-                            title={'text': "긍정도 비율"},
-                            gauge={
-                                'axis': {'range': [0, 100]},
-                                'steps': [
-                                    {'range': [0, 50], 'color': "lightgray"},
-                                    {'range': [50, 100], 'color': "lightblue"}
-                                ]
-                            }
-                        ))
-                        st.plotly_chart(sentiment_chart, use_container_width=True)
-
-                        # 주요 인사이트
-                        st.markdown("#### 주요 인사이트")
-                        for insight in analysis_results['key_insights']:
-                            st.markdown(f"- {insight}")
-
-                    except Exception as e:  # 이 줄의 들여쓰기가 맞지 않아 오류 발생
-                        st.error(f"LLM 분석 중 오류 발생: {e}")
-
-        else:
-            st.error("파일을 처리하지 못했습니다. 다시 시도해주세요.")
-
-        
-# 세션 상태 초기화 후에 사이드바 추가
-with st.sidebar:
-    # 사용 가이드
-    st.markdown("### 🎯 사용 가이드")
-    st.markdown("""
-    1. 회사에 문의하고 싶은 내용을 입력하세요
-    2. 검색 버튼을 클릭하세요
-    3. 분석 결과가 표시되며 음성으로도 들을 수 있습니다
-    """)
-    
-    st.markdown("---")
-    
-    # 검색 기록
-    if st.session_state.search_history:
-        st.markdown(f"총 검색 횟수: {len(st.session_state.search_history)}회")
-
-def process_query(query, progress_bar):
-    """
-    사용자 입력(query)을 처리하여 키워드 추출, 뉴스 검색, 결과 분석 및 표시.
-    """
-    # 키워드 추출
-    keywords = st.session_state.search_system.extract_keywords(query, progress_bar)
-
-    # 뉴스 검색
-    news_items = st.session_state.search_system.search_with_progressive_keywords(
-        keywords, progress_bar
-    )
-
-    # 검색 결과가 없는 경우
-    if not news_items:
-        handle_no_results(query)
-        return
-
-    # 뉴스 내용 분석
-    result = st.session_state.search_system.analyze_news_content(
-        news_items, query, progress_bar
-    )
-
-    # 분석 결과 표시
-    if result:
-        display_analysis_results(result)
-
-def handle_no_results(query):
-    """검색 결과가 없을 때의 처리"""
-    try:
-        response = st.session_state.search_system.client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "당신은 신한카드의 CEO 문동권 사장입니다. 질문에 일반적인 답변을 제공합니다."},
-                {"role": "user", "content": query}
-            ],
-            temperature=0.4
-        )
-        
-        alt_response = response.choices[0].message.content
-        st.markdown(f"#### 💬 AI답변\n{alt_response}")
-        
-        # 검색 이력에 저장
-        st.session_state.search_history.append({
-            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'query': query,
-            'result': f"💬 AI답변: {alt_response}"
-        })
-        
-        return alt_response
-        
-    except Exception as e:
-        st.error(f"대체 답변 생성 중 오류 발생: {str(e)}")
-        return None
-
-def display_analysis_sections(result):
-    """
-    분석 결과를 UI에 표시.
-    """
-    # 섹션 추출
-    speech_part = extract_section(result, "[문동권 사장님 말씀]", "[참고 기사]")
-    ref_part = extract_section(result, "[참고 기사]", "[신입사원 가이드]")
-    guide_part = extract_section(result, "[신입사원 가이드]")
-
-    # 참고 기사 섹션
-    if ref_part:
-        display_reference_section(ref_part)
-
-    # 가이드 섹션
-    if guide_part:
-        display_guide_section(guide_part)
-
-    # 문동권 사장님 말씀
-    if speech_part:
-        display_speech_section(speech_part)
-
-    # 결과 저장
-    save_analysis_result(result, ref_part, guide_part, speech_part)
-
-def display_reference_section(ref_part):
-    """
-    참고 기사 섹션 표시.
-    """
-    st.markdown("#### 📰 참고 기사")
-    lines = ref_part.split('\n')
-    formatted_lines = []
-    for line in lines:
-        if "URL:" in line:
-            url_parts = line.split("URL:")
-            if len(url_parts) > 1:
-                url = url_parts[1].strip()
-                formatted_lines.append(f"- URL: <a href='{url}' target='_blank'>{url}</a>")
-        else:
-            formatted_lines.append(f"- {line}")
-    st.markdown('<br>'.join(formatted_lines), unsafe_allow_html=True)
-
-def display_guide_section(guide_part):
-    """
-    신입사원 가이드 섹션 표시.
-    """
-    st.markdown("#### 🎯 신입사원 가이드")
-    st.markdown(f"""
-    <div style='background-color: #e8f4f9; padding: 20px; border-radius: 10px;'>
-        {guide_part}
-    </div>
-    """, unsafe_allow_html=True)
-
-def display_speech_section(speech_part):
-    """
-    문동권 사장님 말씀 섹션 표시 및 TTS 출력.
-    """
-    bot_image_path = os.path.join(ASSETS_DIR, 'bot_character.png')
-    st.markdown(f"""
-    <div style="display: flex; align-items: center; margin-bottom: 10px;">
-        <img src="data:image/png;base64,{get_image_as_base64(bot_image_path)}" 
-            alt="Bot Icon" 
-            style="width: 30px; height: 30px; margin-right: 10px; border-radius: 50%;">
-        <h3 style="margin: 0; display: inline;">AI문동권 사장님 말씀</h3>
-    </div>
-    <div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px;">
-        {speech_part}
-    </div>
-    """, unsafe_allow_html=True)
-
-    if st.session_state.tts_enabled and 'audio_played' not in st.session_state:
-        st.session_state.search_system.speak_result(speech_part)
-        st.session_state.audio_played = True
-
-def save_analysis_result(result, ref_part, guide_part, speech_part, query=None):
-    """분석 결과를 세션 상태에 저장"""
-    formatted_result = "### 📊 분석 결과\n\n"
-    if ref_part:
-        formatted_result += f"#### 📰 참고 기사\n{ref_part}\n\n"
-    if guide_part:
-        formatted_result += f"#### 🎯 신입사원 가이드\n{guide_part}\n\n"
-    if speech_part:
-        formatted_result += f"#### 💬 문동권 사장님 말씀\n{speech_part}"
-
-    st.session_state.search_history.append({
-        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'query': query,  # query 파라미터 사용
-        'result': formatted_result
-    })
-    save_message(formatted_result, "ai")
-
-        
-def main():
-    initialize_session_state()
-    create_sidebar_with_text_analysis()
-    
-    # 분석 모드일 때만 파일 업로드 블록을 대화 히스토리 위에 표시
-    if st.session_state.analysis_mode:
-        st.markdown("---")
-        st.markdown("### 📂 파일 업로드")
-        uploaded_file = st.file_uploader(
-            "분석할 텍스트 파일을 업로드하세요 (CSV 또는 XLSX)", 
-            type=["csv", "xlsx"],
-            key="file_uploader_analysis"
-        )
-
-        if uploaded_file:
-            file_analysis_result = analyze_uploaded_file(uploaded_file)
-            if file_analysis_result:
-                text_data, data_list, df = file_analysis_result
-                st.success("파일이 성공적으로 업로드되었습니다.")
-                st.session_state.file_data = text_data
-                st.session_state.data_list = data_list  # data_list도 session_state에 저장
-                st.session_state.file_df = df
-        else:
-            st.info("분석할 파일을 업로드해주세요.")
+            st.session_state.data_list = data_list
 
     # 대화 이력 표시
-    paint_history()
-
-    # 모드별 처리
-    if st.session_state.analysis_mode:
-        handle_analysis_mode()
-    else:
-        handle_regular_mode()
-
-            
-def handle_file_upload():
-    """파일 업로드 UI 처리"""
-    st.markdown("---")
-    st.markdown("### 📂 파일 업로드")
-    uploaded_file = st.file_uploader(
-        "분석할 텍스트 파일을 업로드하세요 (CSV 또는 XLSX)", 
-        type=["csv", "xlsx"],
-        key="file_uploader_analysis"
-    )
-    if uploaded_file:
-        process_uploaded_file(uploaded_file)
-        
-
-def handle_analysis_mode():
-    # 파일이 업로드되어 텍스트 데이터가 존재할 경우에만 질문 창 표시
-    if st.session_state.get("file_data"):
-        query = st.chat_input("파일에 대해 궁금한 점을 물어보세요", key="chat_input_analysis")
-        if query:
-            send_message(query, "human")
-            with st.spinner("분석 중..."):
-                result = analyze_text_with_context(
-                    text_query=query,
-                    file_data=st.session_state.file_data,
-                    data_list=st.session_state.data_list,
-                    chat_history=st.session_state.messages,
-                    search_system=st.session_state.search_system
-                )
-
-            requested_analysis = determine_requested_analysis(query)
-            with st.chat_message("ai", avatar="static/bot_character.png"):
-                if result:
-                    if isinstance(result, dict):  # 분석 결과인 경우
-                        if result.get("analysis"):
-                            display_analysis_results(result["analysis"], requested_analysis)
-                        else:
-                            st.markdown("### 답변")
-                            st.markdown(result.get("answer", ""))
-                            st.warning("분석 결과를 추출하지 못했습니다.")
-                    else:  # 일반 텍스트 답변인 경우
-                        st.markdown("### 답변")
-                        st.markdown(result)
-
-                    # 결과를 대화 이력에 저장
-                    if isinstance(result, dict):
-                        message_content = {
-                            "answer": result.get("answer", ""),
-                            "analysis": result.get("analysis", {}),
-                            "requested_analysis": requested_analysis
-                        }
-                        save_message(message_content, "ai", "analysis")
-                    else:
-                        # 일반 텍스트 답변인 경우
-                        save_message(result, "ai")
-
-
-def determine_requested_analysis(question: str) -> List[str]:
-    """사용자의 질문을 기반으로 원하는 분석 종류를 반환"""
-    analysis_types = []
-    if any(word in question for word in ['키워드', '워드 클라우드', '단어', '빈도', '클라우드']):
-        analysis_types.append('keyword_frequency')
-    if any(word in question for word in ['긍정', '부정', '감정', '감성', '감정 분석', '감성 분석']):
-        analysis_types.append('sentiment_analysis')
-    if any(word in question for word in ['카테고리', '주제', '토픽', '분류', '질문의 카테고리', '카테고리화']):
-        analysis_types.append('topic_distribution')
-    # 분석 종류를 명시적으로 요청하지 않은 경우 기본적으로 모두 포함
-    if not analysis_types:
-        analysis_types = ['keyword_frequency', 'sentiment_analysis', 'topic_distribution']
-    return analysis_types
-
-
-
-def process_analysis_query(query):
-    """분석 모드 쿼리 처리"""
-    send_message(query, "human")
-    with st.spinner("분석 중..."):
-        result = analyze_text_with_context(
-            text_query=query,
-            file_data=st.session_state.file_data,
-            chat_history=st.session_state.messages,
-            search_system=st.session_state.search_system,
-            data_list=st.session_state.data_list
+    for message in st.session_state.messages:
+        send_message(
+            message["message"], 
+            message["role"], 
+            image_base64=message.get("image"),
+            is_history=True  # 히스토리임을 표시
         )
-        with st.chat_message("ai", avatar="static/bot_character.png"):
-            display_combined_analysis(result)
-        save_message(result, "ai", "analysis")
 
-def process_regular_query(query):
-    """일반 모드 쿼리 처리"""
-    send_message(query, "human")  # 사용자 메시지 저장 및 표시
-    
-    progress_bar = st.progress(0)
-    with st.chat_message("ai", avatar="static/bot_character.png"):
-        process_regular_chat(query, progress_bar)  
+    # 채팅 인터페이스
+    if st.session_state.file_data:
+        query = st.chat_input("파일에 대해 궁금한 점을 물어보세요")
+        if query:
+            # 사용자 메시지 표시
+            send_message(query, "human")
+            save_message(query, "human")
 
-def handle_regular_mode():
-    """일반 모드 UI 및 로직 처리"""
-    query = st.chat_input(
-    "궁금한 사항을 자유롭게 물어보세요",
-    key="chat_input_regular_mode"  # 고유한 키 사용
-    )
-
-    if query:
-        process_regular_query(query)
+            # AI 응답 생성 및 표시
+            with st.spinner("분석 중..."):
+                response = analyze_text_with_context(
+                    query,
+                    st.session_state.file_data,
+                    st.session_state.data_list
+                )
+                
+                if response:
+                    if any(keyword in query.lower() for keyword in ['카테고리', '분류', '분포', '비율', '통계', '분석']):
+                        # 분석 요청의 경우 analyze_text_with_context 함수 내에서 처리됨
+                        pass
+                    else:
+                        # 일반 응답의 경우 한 번만 표시
+                        send_message(response, "assistant")
+                        save_message(response, "assistant")
 
 if __name__ == "__main__":
     main()

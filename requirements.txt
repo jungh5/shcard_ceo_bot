@@ -6,4 +6,5 @@ wordcloud
 matplotlib
 beautifulsoup4
 requests
-openai
+opena
+kaleido
