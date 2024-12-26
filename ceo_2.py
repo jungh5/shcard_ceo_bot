@@ -123,7 +123,7 @@ def analyze_uploaded_file(file):
 
         # 자동 컬럼 추론
         author_col_candidates = [col for col in text_columns if '이름' in col]
-        question_col_candidates = [col for col in text_columns if 'CEO에게 어떤 질문을 하고 싶으신가요?' in col]
+        question_col_candidates = [col for col in text_columns if '질문' in col]
 
         if len(author_col_candidates) == 1 and len(question_col_candidates) == 1:
             author_col = author_col_candidates[0]
