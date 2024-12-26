@@ -121,15 +121,30 @@ def analyze_uploaded_file(file):
             st.error("텍스트 데이터를 포함한 컬럼을 찾을 수 없습니다.")
             return None, None, None
 
-        # 고정된 컬럼명 사용
-        author_col = "이름"  # 고정된 작성자 컬럼명
-        question_col = "질문"  # 고정된 질문 컬럼명
+        # 자동 컬럼 추론
+        author_col_candidates = [col for col in text_columns if '이름' in col]
+        question_col_candidates = [col for col in text_columns if '질문' in col]
+
+        if len(author_col_candidates) == 1 and len(question_col_candidates) == 1:
+            author_col = author_col_candidates[0]
+            question_col = question_col_candidates[0]
+        else:
+            author_col = st.selectbox(
+                "작성자(이름) 컬럼을 선택하세요:",
+                options=["(없음)"] + text_columns
+            )
+            question_col = st.selectbox(
+                "질문 컬럼을 선택하세요:",
+                options=text_columns
+            )
 
         # 데이터 리스트 생성
         data_list = []
         for idx, row in df.iterrows():
-            author = row[author_col] if not pd.isna(row[author_col]) else ""
+            author = row[author_col] if author_col != "(없음)" else ""
             question_text = row[question_col] if not pd.isna(row[question_col]) else ""
+            if pd.isna(author):
+                author = ""
             data_list.append({
                 "author": str(author),
                 "question": str(question_text)
