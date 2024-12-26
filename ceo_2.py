@@ -116,27 +116,27 @@ def analyze_uploaded_file(file):
             st.error("지원하지 않는 파일 형식입니다.")
             return None, None, None
 
-        text_columns = [col for col in df.columns if df[col].dtype == 'object']
-        if not text_columns:
-            st.error("텍스트 데이터를 포함한 컬럼을 찾을 수 없습니다.")
-            return None, None, None
-
-        # 고정된 컬럼명 사용
-        author_col = "이름"  # 고정된 작성자 컬럼명
-        question_col = "질문"  # 고정된 질문 컬럼명
-
-        # 데이터 리스트 생성
+        # 모든 컬럼을 처리
         data_list = []
         for idx, row in df.iterrows():
-            author = row[author_col] if not pd.isna(row[author_col]) else ""
-            question_text = row[question_col] if not pd.isna(row[question_col]) else ""
-            data_list.append({
-                "author": str(author),
-                "question": str(question_text)
-            })
+            data = {}
+            for col in df.columns:
+                # None이나 NaN 값을 빈 문자열로 처리
+                value = row[col] if not pd.isna(row[col]) else ""
+                # 모든 값을 문자열로 변환
+                data[str(col)] = str(value)
+            data_list.append(data)
 
-        # 분석용 텍스트 데이터
-        text_data = '\n'.join(df[question_col].dropna().astype(str).tolist())
+        # 모든 컬럼의 텍스트를 결합하여 분석용 텍스트 데이터 생성
+        text_data = []
+        for idx, row in df.iterrows():
+            row_text = []
+            for col in df.columns:
+                if not pd.isna(row[col]):
+                    row_text.append(f"{col}: {str(row[col])}")
+            text_data.append(" | ".join(row_text))
+
+        text_data = "\n".join(text_data)
         return text_data, data_list, df
 
     except Exception as e:
@@ -147,10 +147,15 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
     """텍스트 분석 및 응답 생성"""
     try:
         # 실제 데이터 계산
-        unique_authors = set(item["author"] for item in data_list if item["author"])
-        total_questions = len(data_list)
+        total_entries = len(data_list)
+        
+        # 작성자 수 계산
+        unique_authors = set()
+        for entry in data_list:
+            if '이름' in entry and entry['이름'].strip():
+                unique_authors.add(entry['이름'].strip())
         author_count = len(unique_authors)
-        authors_list = sorted(list(unique_authors))
+        author_list = sorted(list(unique_authors))
 
         # 분석 요청인지 확인
         is_analysis_request = any(keyword in text_query.lower() for keyword in [
@@ -160,7 +165,7 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
         # 프롬프트 설정
         if is_analysis_request:
             prompt = f"""
-            신한카드 신입사원들의 총 {total_questions}개의 질문을 정확히 5개의 카테고리로 분류해주세요.
+            신한카드 신입사원들의 총 {total_entries}개의 데이터를 정확히 3개의 카테고리로 분류해주세요.
             반드시 아래 JSON 형식으로 작성해주세요.
 
             데이터:
@@ -168,32 +173,22 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
 
             다음과 같은 JSON 형식으로 정확하게 반환해주세요:
             {{
-                "answer": "신입사원들의 질문을 5개 카테고리로 분석한 결과입니다.",
+                "answer": "신입사원들의 질문을 3개 카테고리로 분석한 결과입니다.",
                 "categories": [
                     {{
                         "category": "카테고리1",
-                        "count": 20,
-                        "percentage": 20.0
-                    }},
-                    {{
-                        "category": "카테고리2",
                         "count": 30,
                         "percentage": 30.0
                     }},
                     {{
+                        "category": "카테고리2",
+                        "count": 20,
+                        "percentage": 20.0
+                    }},
+                    {{
                         "category": "카테고리3",
-                        "count": 25,
-                        "percentage": 25.0
-                    }},
-                    {{
-                        "category": "카테고리4",
-                        "count": 15,
-                        "percentage": 15.0
-                    }},
-                    {{
-                        "category": "카테고리5",
-                        "count": 10,
-                        "percentage": 10.0
+                        "count": 50,
+                        "percentage": 50.0
                     }}
                 ]
             }}
@@ -203,7 +198,7 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
             2. answer는 한 문장으로 작성해주세요
             3. count는 각 카테고리에 속한 질문의 개수입니다
             4. percentage는 전체 질문 중 해당 카테고리가 차지하는 비율입니다
-            5. 모든 카테고리의 count 합은 {total_questions}이어야 합니다
+            5. 모든 카테고리의 count 합은 {total_entries}이어야 합니다
             6. 모든 카테고리의 percentage 합은 100.0이어야 합니다
             7. JSON 형식 외의 다른 텍스트는 포함하지 마세요
             """
@@ -315,14 +310,18 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
                 return None
 
         else:
-            # 일반 질문일 경우
+            # 실제 데이터 계산
+            total_entries = len(data_list)
+            
+            # 프롬프트 설정
             prompt = f"""
             당신은 신한카드 CEO와 신입사원들 간의 소통을 돕는 AI 어시스턴트입니다.
             
-            기초 데이터 (반드시 아래 수치를 사용해주세요):
-            - 총 질문 수: {total_questions}개
+            기초 데이터:
+            - 총 데이터 수: {total_entries}개
             - 총 작성자 수: {author_count}명
-            - 작성자 목록: {', '.join(authors_list)}
+            - 작성자 목록: {', '.join(author_list)}
+            - 포함된 필드: {', '.join(data_list[0].keys())}
 
             데이터:
             {json.dumps(data_list, ensure_ascii=False)}
@@ -330,11 +329,12 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
             질문: {text_query}
 
             규칙:
-            1. 신입사원들의 질문 내용을 기반으로 정확하게 답변하세요
-            2. 질문의 내용과 맥락에 맞게 적절한 수준으로 답변하세요.
+            1. 제공된 모든 필드의 데이터를 고려하여 정확하게 답변하세요
+            2. 질문의 내용과 맥락에 맞게 적절한 수준으로 답변하세요
             3. 통계나 수치는 질문할 때만 답변하세요
             4. 숫자 관련 답변시 반드시 기초 데이터의 정확한 수치를 사용하세요
             5. 데이터에 없는 내용은 절대 추측하지 마세요
+            6. 모든 필드의 정보를 종합적으로 고려하여 답변하세요
             """
             
             # 일반 질문은 스트리밍으로 처리
