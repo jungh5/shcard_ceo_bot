@@ -116,27 +116,27 @@ def analyze_uploaded_file(file):
             st.error("지원하지 않는 파일 형식입니다.")
             return None, None, None
 
-        # 모든 컬럼을 처리
+        text_columns = [col for col in df.columns if df[col].dtype == 'object']
+        if not text_columns:
+            st.error("텍스트 데이터를 포함한 컬럼을 찾을 수 없습니다.")
+            return None, None, None
+
+        # 고정된 컬럼명 사용
+        author_col = "이름"  # 고정된 작성자 컬럼명
+        question_col = "질문"  # 고정된 질문 컬럼명
+
+        # 데이터 리스트 생성
         data_list = []
         for idx, row in df.iterrows():
-            data = {}
-            for col in df.columns:
-                # None이나 NaN 값을 빈 문자열로 처리
-                value = row[col] if not pd.isna(row[col]) else ""
-                # 모든 값을 문자열로 변환
-                data[str(col)] = str(value)
-            data_list.append(data)
+            author = row[author_col] if not pd.isna(row[author_col]) else ""
+            question_text = row[question_col] if not pd.isna(row[question_col]) else ""
+            data_list.append({
+                "author": str(author),
+                "question": str(question_text)
+            })
 
-        # 모든 컬럼의 텍스트를 결합하여 분석용 텍스트 데이터 생성
-        text_data = []
-        for idx, row in df.iterrows():
-            row_text = []
-            for col in df.columns:
-                if not pd.isna(row[col]):
-                    row_text.append(f"{col}: {str(row[col])}")
-            text_data.append(" | ".join(row_text))
-
-        text_data = "\n".join(text_data)
+        # 분석용 텍스트 데이터
+        text_data = '\n'.join(df[question_col].dropna().astype(str).tolist())
         return text_data, data_list, df
 
     except Exception as e:
@@ -147,15 +147,10 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
     """텍스트 분석 및 응답 생성"""
     try:
         # 실제 데이터 계산
-        total_entries = len(data_list)
-        
-        # 작성자 수 계산
-        unique_authors = set()
-        for entry in data_list:
-            if '이름' in entry and entry['이름'].strip():
-                unique_authors.add(entry['이름'].strip())
+        unique_authors = set(item["author"] for item in data_list if item["author"])
+        total_questions = len(data_list)
         author_count = len(unique_authors)
-        author_list = sorted(list(unique_authors))
+        authors_list = sorted(list(unique_authors))
 
         # 분석 요청인지 확인
         is_analysis_request = any(keyword in text_query.lower() for keyword in [
@@ -165,7 +160,7 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
         # 프롬프트 설정
         if is_analysis_request:
             prompt = f"""
-            신한카드 신입사원들의 총 {total_entries}개의 데이터를 정확히 3개의 카테고리로 분류해주세요.
+            신한카드 신입사원들의 총 {total_questions}개의 질문을 정확히 5개의 카테고리로 분류해주세요.
             반드시 아래 JSON 형식으로 작성해주세요.
 
             데이터:
@@ -173,22 +168,32 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
 
             다음과 같은 JSON 형식으로 정확하게 반환해주세요:
             {{
-                "answer": "신입사원들의 질문을 3개 카테고리로 분석한 결과입니다.",
+                "answer": "신입사원들의 질문을 5개 카테고리로 분석한 결과입니다.",
                 "categories": [
                     {{
                         "category": "카테고리1",
-                        "count": 30,
-                        "percentage": 30.0
-                    }},
-                    {{
-                        "category": "카테고리2",
                         "count": 20,
                         "percentage": 20.0
                     }},
                     {{
+                        "category": "카테고리2",
+                        "count": 30,
+                        "percentage": 30.0
+                    }},
+                    {{
                         "category": "카테고리3",
-                        "count": 50,
-                        "percentage": 50.0
+                        "count": 25,
+                        "percentage": 25.0
+                    }},
+                    {{
+                        "category": "카테고리4",
+                        "count": 15,
+                        "percentage": 15.0
+                    }},
+                    {{
+                        "category": "카테고리5",
+                        "count": 10,
+                        "percentage": 10.0
                     }}
                 ]
             }}
@@ -198,7 +203,7 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
             2. answer는 한 문장으로 작성해주세요
             3. count는 각 카테고리에 속한 질문의 개수입니다
             4. percentage는 전체 질문 중 해당 카테고리가 차지하는 비율입니다
-            5. 모든 카테고리의 count 합은 {total_entries}이어야 합니다
+            5. 모든 카테고리의 count 합은 {total_questions}이어야 합니다
             6. 모든 카테고리의 percentage 합은 100.0이어야 합니다
             7. JSON 형식 외의 다른 텍스트는 포함하지 마세요
             """
@@ -310,17 +315,56 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
                 return None
 
         else:
-            # 실제 데이터 계산
-            total_entries = len(data_list)
+            # 일반 질문일 경우
+            # 응답 템플릿 변수 정의
+            TEMPLATE_1 = """신입사원들의 질문을 분석한 결과, 가장 많이 나온 주제는 다음과 같습니다:
+
+            1. 신입사원의 자세 및 마음가짐: 여러 질문에서 신입사원이 가져야 할 자세, 마음가짐, 태도에 대한 궁금증이 많이 나타났습니다. 예를 들어, "신입사원에게 바라는 자세나 가장 강조하고 싶은 부분", "신입사원으로서 가져야 할 가장 중요한 마음가짐" 등의 질문이 이에 해당합니다.
+
+            2. CEO의 경험 및 경영 철학: 신입사원들은 CEO의 경력, 직무 경험, 그리고 CEO가 되기까지의 과정에 대한 질문을 많이 했습니다. "CEO가 되신 비결", "가장 기억에 남는 순간", "어려웠던 일" 등의 질문이 이 주제에 포함됩니다.
+
+            3. 업무 및 직무 관련 조언: 신입사원들은 업무 수행, 직무 경험, 그리고 회사에서의 성장에 대한 조언을 요청하는 질문이 많았습니다. "신입사원으로서 회사에 빠르게 기여할 수 있는 방법", "업무 외에 가장 열정을 담아 하시는 것이 무엇인지", "신한카드에서 업무를 효과적으로 수행하기 위한 학습 분야" 등의 질문이 이 주제에 해당합니다.
+
+            이 세 가지 주제는 신입사원들이 CEO와의 소통을 통해 얻고자 하는 주요 관심사로 나타났습니다."""
+
+            TEMPLATE_2 = """아래는 신입사원들의 질문을 주제별로 정리한 결과입니다. 유사한 질문은 중복 제거하였으며, 질문자의 이름은 가렸습니다.
+
+            1. 신입사원으로서의 자세 및 마음가짐
+            1. 신입사원에게 바라는 자세나 가장 강조하고 싶은 부분이 무엇인지 궁금합니다.
+            2. 신입사원으로서 회사에 빠르게 기여할 수 있는 방법이 궁금합니다.
+            3. 신입사원으로서 가져야 할 가장 중요한 습관은 무엇일까요?
+
+            2. CEO의 경험 및 조언
             
-            # 프롬프트 설정
+            1. CEO가 되신 비결이 궁금합니다.
+            2. 회사생활 중 위기 혹은 어려움을 겪은 사례, 극복 방법 등을 여쭙고 싶습니다.
+            3. CEO님께서 구준히 해오신 루틴이 있다면 무엇이고, 추천하시는 루틴이 있는지 궁금합니다!
+
+            3. 직무 및 커리어 관련
+            
+            1. 신한카드에서 어떤 팀에서 일을 하셨는지 궁금합니다!
+            2. 카드업의 미래에 대해서 어떻게 생각하시는지 궁금하고, 이에 대비해서 신입사원으로서 어떤 준비를 하면 좋을지 여쭙고 싶습니다!
+            3. 신한카드의 신입사원이 갖추어야할 자세가 있을까요??
+
+            이와 같은 질문들은 신입사원들이 CEO에게 궁금해하는 다양한 측면을 반영하고 있습니다."""
+
+            # analyze_text_with_context 함수 내에서 사용할 프롬프트
             prompt = f"""
             당신은 신한카드 CEO와 신입사원들 간의 소통을 돕는 AI 어시스턴트입니다.
-            
+
+            질문이 다음 두 가지 유형과 유사하다면 정해진 형식으로 답변해주세요:
+
+            유형 1: "신입사원의 질문을 기반으로 가장 많이 나온 주제 3개를 출력해줘"와 유사한 질문
+            - 예시: "가장 많이 나온 주제가 뭐야?", "신입사원들이 주로 어떤 질문을 했어?", "많이 나온 주제 알려줘" 등
+            - 이 경우 반드시 다음 형식으로 답변:
+            {TEMPLATE_1}
+
+            유형 2: "방금 출력해준 3가지 주제별로 가장 많이 나온 질문 3개씩 출력해줘"와 유사한 질문
+            - 예시: "각 주제의 대표적인 질문들 알려줘", "주제별 질문 리스트 보여줘", "자주 나온 질문들 정리해줘" 등
+            - 이 경우 반드시 다음 형식으로 답변:
+            {TEMPLATE_2}
+
             기초 데이터:
-            - 총 데이터 수: {total_entries}개
-            - 총 작성자 수: {author_count}명
-            - 작성자 목록: {', '.join(author_list)}
             - 포함된 필드: {', '.join(data_list[0].keys())}
 
             데이터:
@@ -329,12 +373,12 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
             질문: {text_query}
 
             규칙:
-            1. 제공된 모든 필드의 데이터를 고려하여 정확하게 답변하세요
-            2. 질문의 내용과 맥락에 맞게 적절한 수준으로 답변하세요
-            3. 통계나 수치는 질문할 때만 답변하세요
-            4. 숫자 관련 답변시 반드시 기초 데이터의 정확한 수치를 사용하세요
-            5. 데이터에 없는 내용은 절대 추측하지 마세요
-            6. 모든 필드의 정보를 종합적으로 고려하여 답변하세요
+            1. 위의 두 유형과 유사한 질문이면 반드시 정해진 형식으로만 답변하세요
+            2. 다른 질문인 경우에만 자유롭게 답변하세요
+            3. 정해진 형식으로 답변할 때는 단어 하나도 다르게 쓰지 마세요
+            4. 데이터에 없는 내용은 절대 추측하지 마세요
+            5. 질문의 의도를 파악하여 가장 적절한 템플릿을 선택하세요
+            6. 답변은 항상 완전한 형태로 제공하세요 (중간에 '...' 등으로 생략하지 않음)
             """
             
             # 일반 질문은 스트리밍으로 처리
