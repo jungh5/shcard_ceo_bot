@@ -210,7 +210,7 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
             
             # 분석 요청은 스트리밍 없이 처리
             response = st.session_state.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4o",
                 messages=[
                     {"role": "system", "content": "당신은 데이터 분석 전문가입니다."},
                     {"role": "user", "content": prompt}
@@ -387,7 +387,7 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
             
             # 일반 질문은 스트리밍으로 처리
             response = st.session_state.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4o",
                 messages=[
                     {"role": "system", "content": "당신은 데이터 분석 전문가입니다."},
                     {"role": "user", "content": prompt}
