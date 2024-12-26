@@ -48,8 +48,8 @@ body, html {
 """, unsafe_allow_html=True)
 
 # 페이지 제목
-st.markdown('<div class="custom-title">신한카드 신입사원 - CEO 커뮤니케이션</div>', unsafe_allow_html=True)
-st.markdown('<div class="custom-title1">신입사원들은 궁금한 사항을 자유롭게 물어보세요 🙋‍♀️🙋‍♂️</div>', unsafe_allow_html=True)
+st.markdown('<div class="custom-title">CEO - 공채 15기 신입사원 커뮤니케이션</div>', unsafe_allow_html=True)
+
 
 def get_image_as_base64(image_path):
     """이미지를 Base64 문자열로 변환"""
