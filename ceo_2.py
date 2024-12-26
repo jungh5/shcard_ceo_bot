@@ -212,7 +212,7 @@ def analyze_text_with_context(text_query: str, file_data: str, data_list: list):
             response = st.session_state.client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": "당신은 데이터 분석 전문가입니다."},
+                    {"role": "system", "content": "당신은 CEO와 신입사원간의 커뮤니케이션을 돕는 챗봇입니다. 사용자의 질문이 신입사원들이 CEO에게 물어보는 것과 관련된 질문일 경우 업로드된 파일 바탕으로 답변하며, 그 외 일반적인 질문에 대해선 자연스럽게 알고 있는 사실을 답변합니다. 절대 없는 내용을 임의로 만들어서 답변하지 않습니다. "},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.0,
